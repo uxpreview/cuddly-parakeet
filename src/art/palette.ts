@@ -55,8 +55,22 @@ export const CH1 = {
   scrub: c('ch1.scrub', '#7E8A63'),
   /** The town below the rim, seen through haze: limestone gone cool and pale. */
   townStone: c('ch1.town.stone', '#D6CDBB'),
-  /** Burnt-orange roofs, kept clearly orange. Never terracotta-red. */
-  townRoof: c('ch1.town.roof', '#C4763F'),
+  /**
+   * The roofs of the town, AS SEEN FROM CHAPTER 1.
+   *
+   * The first pass used `#C4763F`, which is Chapter 2's documented roof colour
+   * arriving half an hour early. art-direction.md's second rule is that no
+   * palette borrows from another chapter, and the cost here was not abstract:
+   * the roofs measured six hundred times the collar's screen area at nearly its
+   * saturation, so in the chapter's own hero reveal the eye went to the town and
+   * stayed there. Rule one's payoff — the eye goes to the collar first,
+   * involuntarily — stopped working.
+   *
+   * So this is a Chapter 1 value: the limestone hex pushed a little warm and
+   * dropped, a pale warm suggestion of roofs at three kilometres. The saturated
+   * `#C4763F` arrives when the player is standing in Chapter 2 and has earned it.
+   */
+  townRoof: c('ch1.town.roof', '#C79877'),
   /** The sea past the town, at morning. */
   sea: c('ch1.sea', '#6E9AA0'),
 } as const
@@ -70,7 +84,9 @@ export const BOY = {
   shorts: c('boy.shorts', '#8A5A3B'),
   // [DERIVED] Not named in art-direction.md; see docs/decisions.md D15.
   skin: c('boy.skin', '#D6A57A'),
-  hair: c('boy.hair', '#3E332C'),
+  // warm and a shade up from black: at the gameplay camera a near-neutral dark
+  // cap on a round head reads as a helmet
+  hair: c('boy.hair', '#4E3D30'),
   eyes: c('boy.eyes', '#2E2A26'),
   shoes: c('boy.shoes', '#6B5B4A'),
 } as const

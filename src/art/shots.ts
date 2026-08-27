@@ -72,7 +72,7 @@ export function buildStage(
   // docs/game-design.md. They fade by strength only.
   const boyPrints: Stage['boyPrints'] = []
   const dogPrints: Stage['dogPrints'] = []
-  const step = 0.14 // in sample units, ~0.21 m: dense sampling, then thinned
+  const step = 0.1 // in sample units, ~0.15 m: dense sampling, then thinned
   let sinceBoy = 99
   let sinceDog = 99
   let side = 1
@@ -89,11 +89,11 @@ export function buildStage(
     const heading = Math.atan2(Math.cos(h), Math.sin(h)) // decal +Z faces travel
 
     // the dog's trail runs the whole way; the boy's stops where he is standing
-    if (sinceDog >= 0.7) {
+    if (sinceDog >= 0.42) {
       sinceDog = 0
       side = -side
-      const px = p.x + Math.sin(h) * 0.075 * side
-      const pz = p.z - Math.cos(h) * 0.075 * side
+      const px = p.x + Math.sin(h) * 0.1 * side
+      const pz = p.z - Math.cos(h) * 0.1 * side
       dogPrints.push({
         at: [px, p.y + 0.012, pz],
         heading,
@@ -101,10 +101,10 @@ export function buildStage(
         fade: 0.55 + 0.45 * t,
       })
     }
-    if (i <= bi && sinceBoy >= 0.62) {
+    if (i <= bi && sinceBoy >= 0.46) {
       sinceBoy = 0
-      const px = p.x + Math.sin(h) * 0.085 * (side > 0 ? 1 : -1)
-      const pz = p.z - Math.cos(h) * 0.085 * (side > 0 ? 1 : -1)
+      const px = p.x + Math.sin(h) * 0.09 * (side > 0 ? 1 : -1)
+      const pz = p.z - Math.cos(h) * 0.09 * (side > 0 ? 1 : -1)
       boyPrints.push({
         at: [px, p.y + 0.01, pz],
         heading,
@@ -149,15 +149,19 @@ export function buildShots(art: ArtTerrain, stage: Stage, cameras: CameraDef[]):
     // Shot from the shadow side looking across at the lit wall, which is the
     // only arrangement in which both documented limestone values are in frame
     // at once. Low enough that the rim and the sky above it are in shot too.
+    // Tucked against the shadow wall and aimed across it, so the frame is
+    // mostly the sunlit side. The cool wall is the accent here, not the ground
+    // state: a limestone canyon at morning that renders grey-green everywhere
+    // has lost the chapter, whatever its individual hexes measure.
     const a = s(70)
-    const b = s(101)
+    const b = s(102)
     const lx = Math.sin(a.h)
     const lz = -Math.cos(a.h)
     shots.push({
       id: 'vista',
       label: 'Vista: both limestone values, rim and sky',
-      position: [a.x - lx * 7.5 - Math.cos(a.h) * 13, a.y + 5.2, a.z - lz * 7.5 - Math.sin(a.h) * 13],
-      lookAt: [b.x + lx * 5, b.y + 6.5, b.z + lz * 5],
+      position: [a.x - lx * 6.5 - Math.cos(a.h) * 14, a.y + 6.0, a.z - lz * 6.5 - Math.sin(a.h) * 14],
+      lookAt: [b.x + lx * 7, b.y + 5.5, b.z + lz * 7],
       fov: 52,
     })
   }

@@ -74,22 +74,6 @@ const capsule = (r: number, len: number, cap = 3, seg = 8) =>
 const box = (x: number, y: number, z: number) => new THREE.BoxGeometry(x, y, z)
 const cone = (r: number, h: number, seg = 5) => new THREE.ConeGeometry(r, h, seg)
 
-/** A limb: a tapered box pivoted at its top, swung by `angle`. */
-function limb(
-  w: number,
-  len: number,
-  d: number,
-  hip: [number, number, number],
-  angle: number,
-  hex: string,
-  shadow: number,
-) {
-  const g = place(box(w, len, d), [0, -len / 2, 0])
-  place(g, [0, 0, 0], [angle, 0, 0])
-  place(g, hip)
-  return paint(g, hex, shadow)
-}
-
 // --- the boy ---------------------------------------------------------------
 // Roughly 1.15 m, three heads tall, big head, sturdy legs, rounded everything.
 // Faceless but for the eyes: art-direction.md leaves the face [OPEN] and
@@ -222,88 +206,158 @@ export function buildDog(pose: DogPose = DOG_LOOK_BACK, occlusion = 0): THREE.Gr
   const pts = DOG.points.hex
   const S = SHADOW_MIX.character
 
-  // legs
+  // The body is ONE lofted barrel, not two capsules pushed together. Two
+  // capsules leave a crease down his back and read as a pack animal; a single
+  // run of rings from a deep chest to a narrower rump reads as a dog.
+  {
+    const rings: [number, number, number, number][] = [
+      // z, half-width, half-height, centre height. Compact: a canyon dog stands
+      // taller than he is long in the barrel, and a long low body reads as a cat.
+      [0.24, 0.058, 0.064, 0.4],
+      [0.17, 0.098, 0.108, 0.39],
+      [0.07, 0.114, 0.122, 0.385],
+      [-0.04, 0.106, 0.11, 0.385],
+      [-0.14, 0.094, 0.096, 0.39],
+      [-0.22, 0.066, 0.068, 0.395],
+    ]
+    const N = 8
+    const ringPts = rings.map(([z, hw, hh, cy]) => {
+      const out: THREE.Vector3[] = []
+      for (let i = 0; i < N; i++) {
+        const a = (i / N) * Math.PI * 2
+        // belly tucked up, back rounded
+        const t = Math.sin(a)
+        const yr = t < 0 ? hh * 0.82 : hh
+        out.push(new THREE.Vector3(Math.cos(a) * hw, cy + t * yr, z))
+      }
+      return out
+    })
+    const mb: THREE.BufferGeometry[] = []
+    const build = (hex: string, faces: [THREE.Vector3, THREE.Vector3, THREE.Vector3][]) => {
+      const pos: number[] = []
+      for (const f of faces) for (const v of f) pos.push(v.x, v.y, v.z)
+      const g = new THREE.BufferGeometry()
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+      return paint(g, hex, S)
+    }
+    const faces: [THREE.Vector3, THREE.Vector3, THREE.Vector3][] = []
+    for (let r = 0; r < ringPts.length - 1; r++) {
+      for (let i = 0; i < N; i++) {
+        const j = (i + 1) % N
+        faces.push([ringPts[r][i], ringPts[r + 1][i], ringPts[r + 1][j]])
+        faces.push([ringPts[r][i], ringPts[r + 1][j], ringPts[r][j]])
+      }
+    }
+    // caps
+    const front = new THREE.Vector3(0, rings[0][3], rings[0][0] + 0.05)
+    const back = new THREE.Vector3(0, rings[rings.length - 1][3], rings[rings.length - 1][0] - 0.05)
+    for (let i = 0; i < N; i++) {
+      const j = (i + 1) % N
+      faces.push([front, ringPts[0][j], ringPts[0][i]])
+      faces.push([back, ringPts[ringPts.length - 1][i], ringPts[ringPts.length - 1][j]])
+    }
+    mb.push(build(coat, faces))
+    parts.push(...mb)
+  }
+
+  // legs: rounded, with the socks as rounded fur markings rather than blocks
   const legs: [number, number, number][] = [
-    [0.085, 0.2, pose.legFL],
-    [-0.085, 0.2, pose.legFR],
-    [0.085, -0.19, pose.legBL],
-    [-0.085, -0.19, pose.legBR],
+    [0.08, 0.145, pose.legFL],
+    [-0.08, 0.145, pose.legFR],
+    [0.082, -0.155, pose.legBL],
+    [-0.082, -0.155, pose.legBR],
   ]
   for (const [x, z, ang] of legs) {
-    parts.push(limb(0.066, 0.245, 0.07, [x, 0.285, z], ang, coat, S))
-    // white points: socks
-    const sock = place(box(0.076, 0.105, 0.082), [0, -0.245 + 0.052, 0.004])
+    const leg = capsule(0.037, 0.2, 3, 6)
+    place(leg, [0, -0.135, 0])
+    place(leg, [0, 0, 0], [ang, 0, 0])
+    place(leg, [x, 0.35, z])
+    parts.push(paint(leg, coat, S))
+
+    const sock = capsule(0.04, 0.04, 3, 7)
+    place(sock, [0, -0.225, 0.004])
     place(sock, [0, 0, 0], [ang, 0, 0])
-    place(sock, [x, 0.285, z])
+    place(sock, [x, 0.35, z])
     parts.push(paint(sock, pts, S))
   }
 
-  // torso: chest deeper than the waist, tucked-up belly. Compact.
-  const chest = capsule(0.115, 0.16, 3, 8)
-  chest.rotateX(Math.PI / 2)
-  chest.scale(1, 0.94, 1)
-  parts.push(paint(place(chest, [0, 0.345, 0.1], [0, 0, 0]), coat, S))
-  const rump = capsule(0.1, 0.11, 3, 8)
-  rump.rotateX(Math.PI / 2)
-  parts.push(paint(place(rump, [0, 0.34, -0.16]), coat, S))
   // White points, sized to do their job. art-direction.md puts the coat at
   // `#E5D5BC` and the canyon gravel at `#EFE3C8` — four value points apart, near
   // identical hue — so the coat alone cannot separate him from the ground he
-  // trots over. The white points are the value break that does, and they have
-  // to be big enough to survive at trail distance: chest, throat, muzzle, four
-  // socks and the tail tip.
-  const blaze = sphere(0.075, 8, 6)
-  blaze.scale(0.78, 1.35, 0.7)
-  parts.push(paint(place(blaze, [0, 0.34, 0.235]), pts, S))
-  const throat = sphere(0.055, 7, 5)
-  throat.scale(0.85, 1.1, 0.8)
-  parts.push(paint(place(throat, [0, 0.47, 0.25]), pts, S))
+  // trots over. The white points are the value break that does.
+  const blaze = sphere(0.062, 8, 6)
+  blaze.scale(0.8, 1.4, 0.75)
+  parts.push(paint(place(blaze, [0, 0.39, 0.235]), pts, S))
 
-  // neck, angled up out of the shoulders
-  const neck = place(capsule(0.062, 0.1, 3, 7), [0, 0.47, 0.21], [0.55, 0, 0])
-  parts.push(paint(neck, coat, S))
+  // A real neck, angled up out of the shoulders. Without it the head is bolted
+  // to the front of the barrel and the whole animal reads as a goat.
+  const NECK_Y = 0.5
+  const NECK_Z = 0.235
+  const NECK_TILT = 0.62
+  {
+    const neck = capsule(0.058, 0.11, 3, 8)
+    place(neck, [0, 0, 0], [NECK_TILT, 0, 0])
+    place(neck, [0, NECK_Y, NECK_Z])
+    parts.push(paint(neck, coat, S))
+    const throat = sphere(0.04, 7, 5)
+    throat.scale(0.8, 1.1, 0.8)
+    parts.push(paint(place(throat, [0, NECK_Y - 0.035, NECK_Z + 0.05]), pts, S))
+  }
 
   // head group: everything above the collar turns together
   const headParts: THREE.BufferGeometry[] = []
-  const skull = sphere(0.083, 9, 6)
-  skull.scale(1, 0.95, 1.12)
+  const skull = sphere(0.078, 9, 7)
+  skull.scale(1, 0.94, 1.05)
   headParts.push(paint(place(skull, [0, 0, 0]), coat, S))
-  // muzzle, a white point
-  const muzzle = box(0.062, 0.055, 0.1)
-  headParts.push(paint(place(muzzle, [0, -0.028, 0.115]), pts, S))
-  headParts.push(paint(place(sphere(0.021, 6, 4), [0, -0.014, 0.165]), DOG.nose.hex, 0.2))
-  // pointed ears, set wide and upright
+  // A SHORT muzzle. The long one read as a snout, which is half of why the
+  // silhouette said donkey.
+  const muzzle = capsule(0.032, 0.035, 3, 7)
+  muzzle.rotateX(Math.PI / 2)
+  headParts.push(paint(place(muzzle, [0, -0.028, 0.088]), pts, S))
+  headParts.push(paint(place(sphere(0.019, 6, 5), [0, -0.02, 0.118]), DOG.nose.hex, 0.2))
+  // Ears: short, broad, raked back. Tall thin spikes read as horns.
   for (const side of [1, -1]) {
-    const ear = place(cone(0.04, 0.105, 5), [0, 0.052, 0])
-    place(ear, [0, 0, 0], [-0.16, 0, side * 0.2])
-    place(ear, [0.055 * side, 0.078, -0.012])
+    const ear = cone(0.046, 0.072, 4)
+    ear.scale(1, 1, 0.55)
+    place(ear, [0, 0.03, 0])
+    place(ear, [0, 0, 0], [-0.52, side * 0.25, side * 0.34])
+    place(ear, [0.05 * side, 0.062, -0.012])
     headParts.push(paint(ear, coat, S))
   }
-  // eyes: small and dark. They will catch light at night; not in this chapter.
   for (const side of [1, -1]) {
-    const eye = sphere(0.016, 6, 4)
+    const eye = sphere(0.015, 6, 5)
     eye.scale(1, 1.05, 0.7)
-    headParts.push(paint(place(eye, [0.046 * side, 0.014, 0.072]), DOG.eyes.hex, 0.15))
+    headParts.push(paint(place(eye, [0.042 * side, 0.012, 0.06]), DOG.eyes.hex, 0.15))
   }
   const head = mergePainted(headParts)
   place(head, [0, 0, 0], [pose.headP, pose.headY, 0])
-  place(head, [0, 0.565, 0.28])
+  place(head, [0, NECK_Y + 0.115, NECK_Z + 0.075])
   parts.push(head)
 
-  // tail: up and carried, with a white tip. Tail language is half of what this
-  // character says, so it is a real form, not a stub.
-  const tailParts: THREE.BufferGeometry[] = []
-  const seg = 4
-  for (let i = 0; i < seg; i++) {
-    const t = i / seg
-    const r = 0.032 * (1 - t * 0.45)
-    const s = place(box(r * 2, r * 2, 0.075), [0, 0, -0.038 - i * 0.072])
-    tailParts.push(paint(s, i === seg - 1 ? DOG.points.hex : coat, S))
+  // Tail: a curved taper, not a segmented rod. Tail language is half of what
+  // this character says, so the form has to be able to carry a curve.
+  {
+    const segs = 5
+    let px = 0
+    let py = 0.415
+    let pz = -0.235
+    let ang = pose.tailUp
+    for (let i = 0; i < segs; i++) {
+      const t = i / segs
+      const r = 0.028 * (1 - t * 0.55)
+      const len = 0.055
+      const seg = capsule(r, len * 0.7, 2, 6)
+      place(seg, [0, len / 2, 0])
+      place(seg, [0, 0, 0], [-(Math.PI / 2 - ang), pose.tailY * (0.4 + t), 0])
+      place(seg, [px, py, pz])
+      parts.push(paint(seg, i >= segs - 2 ? pts : coat, S))
+      // advance along the tail, curling as it goes
+      px += Math.sin(pose.tailY * (0.4 + t)) * len * 0.3
+      py += Math.sin(ang) * len
+      pz -= Math.cos(ang) * len
+      ang -= 0.16 // the curl
+    }
   }
-  const tail = mergePainted(tailParts)
-  place(tail, [0, 0, 0], [pose.tailUp, pose.tailY, 0])
-  place(tail, [0, 0.4, -0.26])
-  parts.push(tail)
 
   const geom = mergePainted(parts)
   const mat = makeRamp({
@@ -315,22 +369,24 @@ export function buildDog(pose: DogPose = DOG_LOOK_BACK, occlusion = 0): THREE.Gr
   mat.name = 'dog'
 
   // The collar. Its own mesh, its own material, named for its asset id.
-  // Red-audit whitelist entry 1 of 2. Nothing else in the game may be this hue.
-  // Thicker than a real collar. It is the game's entire search cue, read over
-  // the boy's shoulder at twenty metres, and a band that is anatomically right
-  // is a band nobody ever sees.
-  const collarGeom = new THREE.TorusGeometry(0.078, 0.027, 5, 12)
-  collarGeom.rotateX(Math.PI / 2 - 0.55)
-  collarGeom.translate(0, 0.5, 0.245)
+  // Red-audit whitelist entry 1 of 2. It wraps the NECK, behind the jaw: a band
+  // that can only be seen from one side is not reading as a collar, and on this
+  // dog it was reading as something red carried in his mouth.
+  const collarGeom = new THREE.TorusGeometry(0.066, 0.024, 6, 14)
+  collarGeom.rotateX(Math.PI / 2 - NECK_TILT)
+  collarGeom.translate(0, NECK_Y - 0.012, NECK_Z + 0.008)
   const collarMat = makeRamp({
     color: DOG.collar.hex,
     shadowKey: DOG.collar.hex,
-    // the collar does not take the terrain shadow: it is the game's search cue
-    // and it has to survive him standing in shade
-    occlusion: 0,
-    // The collar barely darkens in shade. It is the game's search cue and it
-    // has to survive being on the shadow side of the dog.
     shadowMix: 0.0,
+    // The collar barely shades and never takes the terrain's shadow. It is the
+    // game's entire search cue: art-direction.md asks that in every frame
+    // containing the dog the eye go to it first, involuntarily, and a cue that
+    // loses a fifth of its value on the shadow side cannot do that. This is the
+    // one material in the game allowed to disobey the light.
+    shadeDrop: 0.9,
+    flatten: 0.72,
+    occlusion: 0,
   })
   collarMat.name = DOG.collar.id
 
@@ -338,7 +394,7 @@ export function buildDog(pose: DogPose = DOG_LOOK_BACK, occlusion = 0): THREE.Gr
   g.add(new THREE.Mesh(geom, mat))
   g.add(new THREE.Mesh(collarGeom, collarMat))
   g.userData.materials = [mat, collarMat]
-  g.userData.height = 0.62
-  g.userData.footprint = 0.3
+  g.userData.height = 0.6
+  g.userData.footprint = 0.28
   return g
 }

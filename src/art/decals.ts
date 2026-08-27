@@ -95,10 +95,14 @@ export function makeBlobShadow(opts: BlobShadowOptions): THREE.Mesh {
   const [az, el] = opts.sunDir
   const elRad = Math.max((el * Math.PI) / 180, 0.12)
   const cot = Math.cos(elRad) / Math.sin(elRad)
-  const stretch = Math.min(1 + 1.1 * cot, 2.4)
-  const rBase = opts.footprint * 1.35
-  // anchor the near end at the feet: shift by half the length the stretch added
-  const throwDist = (rBase * (stretch - 1)) / 2
+  const stretch = Math.min(1 + 0.85 * cot, 2.1)
+  const rBase = opts.footprint * 1.05
+  // Anchored at the feet: the shift is only what keeps the near END of the
+  // stretched ellipse under the character, and it is deliberately short of that
+  // so the core always overlaps the contact point. A blob that reaches for the
+  // correct shadow length and lets go of the feet reads as a separate object
+  // lying on the ground, which is what it looked like.
+  const throwDist = (rBase * (stretch - 1)) / 2.8
 
   const geom = new THREE.PlaneGeometry(rBase * stretch, rBase, 1, 1)
   geom.rotateX(-Math.PI / 2)

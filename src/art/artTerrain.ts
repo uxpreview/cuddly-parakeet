@@ -25,9 +25,10 @@ export interface ArtTerrain {
   legs: { name: string; range: [number, number]; surface: string; chain: ArtChainPoint[] }[]
   waters: {
     range: [number, number]
-    fromO: number
-    toO: number
-    /** Absolute world height per sample from range[0]-1 to range[1]+1. */
+    /** Fractional cross-section rung indices, so the shoreline tracks the bank. */
+    fromK: number
+    toK: number
+    /** Absolute world height per sample across range[0]..range[1]. */
     levels: number[]
     material: string
     opacity: number
@@ -102,44 +103,59 @@ class MeshBuilder {
   col: number[] = []
   shadow: number[] = []
   occ: number[] = []
+  ao: number[] = []
   private c = new THREE.Color()
 
-  private push(p: THREE.Vector3, hex: string, shade: number, tone: number, o: number) {
+  private push(p: THREE.Vector3, hex: string, shade: number, tone: number, o: number, ao = 1) {
     this.pos.push(p.x, p.y, p.z)
     this.c.set(hex)
     this.col.push(this.c.r * tone, this.c.g * tone, this.c.b * tone)
     this.shadow.push(shade)
     this.occ.push(o)
+    this.ao.push(ao)
   }
 
   tri(
     a: THREE.Vector3,
     b: THREE.Vector3,
     cc: THREE.Vector3,
-    hex: string,
-    shade: number,
+    hex: string | [string, string, string],
+    shade: number | [number, number, number],
     tone: number | [number, number, number] = 1,
     occ: [number, number, number] = [0, 0, 0],
+    ao: [number, number, number] = [1, 1, 1],
   ) {
     const t = Array.isArray(tone) ? tone : ([tone, tone, tone] as const)
-    this.push(a, hex, shade, t[0], occ[0])
-    this.push(b, hex, shade, t[1], occ[1])
-    this.push(cc, hex, shade, t[2], occ[2])
+    const x = Array.isArray(hex) ? hex : ([hex, hex, hex] as const)
+    const sh = Array.isArray(shade) ? shade : ([shade, shade, shade] as const)
+    this.push(a, x[0], sh[0], t[0], occ[0], ao[0])
+    this.push(b, x[1], sh[1], t[1], occ[1], ao[1])
+    this.push(cc, x[2], sh[2], t[2], occ[2], ao[2])
   }
 
+  /**
+   * Colour is per VERTEX, not per face. A rung of gravel meeting a rung of
+   * scree with one flat colour each paints a hard stripe down the canyon, and a
+   * floor built of stripes reads as a road. Gradating the two across the quad
+   * gives the soft material transitions ground actually has, everywhere at
+   * once: track into shoulder, talus into cliff, bank into water.
+   */
   quad(
     a: THREE.Vector3,
     b: THREE.Vector3,
     cc: THREE.Vector3,
     d: THREE.Vector3,
-    hex: string,
-    shade: number,
+    hex: string | [string, string, string, string],
+    shade: number | [number, number, number, number],
     tone: number | [number, number, number, number] = 1,
     occ: [number, number, number, number] = [0, 0, 0, 0],
+    ao: [number, number, number, number] = [1, 1, 1, 1],
   ) {
     const t = Array.isArray(tone) ? tone : ([tone, tone, tone, tone] as const)
-    this.tri(a, b, cc, hex, shade, [t[0], t[1], t[2]], [occ[0], occ[1], occ[2]])
-    this.tri(a, cc, d, hex, shade, [t[0], t[2], t[3]], [occ[0], occ[2], occ[3]])
+    const x = Array.isArray(hex) ? hex : ([hex, hex, hex, hex] as const)
+    const sh = Array.isArray(shade) ? shade : ([shade, shade, shade, shade] as const)
+    this.tri(a, b, cc, [x[0], x[1], x[2]], [sh[0], sh[1], sh[2]], [t[0], t[1], t[2]], [occ[0], occ[1], occ[2]], [ao[0], ao[1], ao[2]])
+    this.tri(a, cc, d, [x[0], x[2], x[3]], [sh[0], sh[2], sh[3]], [t[0], t[2], t[3]], [occ[0], occ[2], occ[3]], [ao[0], ao[2], ao[3]])
   }
 
   get empty() {
@@ -152,6 +168,7 @@ class MeshBuilder {
     g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3))
     g.setAttribute('aShadow', new THREE.Float32BufferAttribute(this.shadow, 1))
     g.setAttribute('aOcc', new THREE.Float32BufferAttribute(this.occ, 1))
+    g.setAttribute('aAo', new THREE.Float32BufferAttribute(this.ao, 1))
     g.computeVertexNormals() // non-indexed: every face gets its own normal
     return g
   }
@@ -240,6 +257,11 @@ class SunOcclusion {
     return i < 0 ? -1e9 : this.h[i]
   }
 
+  /** Public ground height, for rejecting scatter that would hang in mid-air. */
+  heightAt(x: number, z: number): number {
+    return this.height(x, z)
+  }
+
   /** One ray: is anything between this point and the sun? */
   private blocked(x: number, y: number, z: number, dx: number, dz: number, dy: number): boolean {
     const STEP = 1.6
@@ -248,6 +270,45 @@ class SunOcclusion {
       if (hy > y + dy * t + 0.35) return true
     }
     return false
+  }
+
+  /**
+   * Sky visibility at a point: 1 in the open, 0 down a hole. Eight rays around
+   * the compass, each returning how high the horizon is in that direction.
+   *
+   * This is the "soft contact darkening where things meet ground" the art
+   * direction asks for, and it is the only thing that puts a dark anywhere near
+   * the bottom of this chapter's value range: the feet of the walls, the inside
+   * of the narrows, the underside of the terraces.
+   */
+  skyView(x: number, y: number, z: number): number {
+    const N = 8
+    let sum = 0
+    for (let a = 0; a < N; a++) {
+      const ang = (a / N) * Math.PI * 2
+      const dx = Math.cos(ang)
+      const dz = Math.sin(ang)
+      let maxSlope = 0
+      for (let t = 1.2; t < 22; t += 1.6) {
+        const hy = this.height(x + dx * t, z + dz * t)
+        if (hy < -1e8) continue
+        const slope = (hy - y) / t
+        if (slope > maxSlope) maxSlope = slope
+      }
+      // horizon elevation as a fraction of the hemisphere
+      sum += 1 - Math.atan(maxSlope) / (Math.PI / 2)
+    }
+    return sum / N
+  }
+
+  aoAt(leg: ArtTerrain['legs'][number], i: number, k: number): number {
+    const key = 'ao|' + leg.name + '|' + i + '|' + k
+    const hit = this.cache.get(key)
+    if (hit !== undefined) return hit
+    const p = this.point(leg, i, k)
+    const v = this.skyView(p.x, p.y + 0.25, p.z)
+    this.cache.set(key, v)
+    return v
   }
 
   sample(x: number, y: number, z: number): number {
@@ -285,21 +346,89 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
   const C = art.centerline
   const centerAt = (i: number) => C[Math.max(0, Math.min(C.length - 1, i))]
 
-  const legOf = new Map<string, (typeof art.legs)[number]>()
-  for (const l of art.legs) legOf.set(l.name, l)
+  // Which leg owns each sample, and its neighbours. Legs share their boundary
+  // sample, so every sample has a leg and at most one neighbour to blend with.
+  const legIndexAt = new Int16Array(C.length).fill(-1)
+  art.legs.forEach((leg, li) => {
+    for (let i = leg.range[0]; i <= leg.range[1]; i++) {
+      if (legIndexAt[i] < 0) legIndexAt[i] = li
+    }
+  })
+  for (let i = 0; i < C.length; i++) {
+    if (legIndexAt[i] < 0) legIndexAt[i] = i === 0 ? 0 : legIndexAt[i - 1]
+  }
 
-  // A cross-section point in world space. The jitter is a deterministic
-  // function of (sample, chain index), so anything that needs to sit exactly on
-  // this surface later can ask for the same point and get the same answer.
-  const chainPoint = (leg: (typeof art.legs)[number], i: number, k: number) => {
-    const p = leg.chain[Math.max(0, Math.min(leg.chain.length - 1, k))]
-    const [cx, cy, cz, h] = centerAt(i)
+  /**
+   * A cross-section point in world space, blended across leg boundaries.
+   *
+   * Every chain has the same thirteen rungs in the same order, so a boundary
+   * between (say) a leg with a cliff on the right and a leg with a river there
+   * is a lerp of two positions rather than two different shapes overlapping.
+   * Without this the world tears open at every boundary — most visibly where
+   * the river crosses the path — and you can see sky through the rim.
+   *
+   * The jitter is a deterministic function of (sample, rung), so anything that
+   * needs to sit exactly on this surface later asks for the same point and gets
+   * the same answer.
+   */
+  const TRANS = 3 // samples either side of a boundary
+  const chainPointAt = (i: number, k: number, out = new THREE.Vector3()) => {
+    const idx = Math.max(0, Math.min(C.length - 1, i))
+    const li = legIndexAt[idx]
+    const leg = art.legs[li]
+    const kk = Math.max(0, Math.min(leg.chain.length - 1, k))
+    const p = leg.chain[kk]
+
+    let o = p.o
+    let y = p.y
+    let j = p.j
+    let other: (typeof art.legs)[number] | null = null
+    let w = 0
+    if (idx - leg.range[0] < TRANS && li > 0) {
+      other = art.legs[li - 1]
+      w = 0.5 * (1 - (idx - leg.range[0]) / TRANS)
+    } else if (leg.range[1] - idx < TRANS && li < art.legs.length - 1) {
+      other = art.legs[li + 1]
+      w = 0.5 * (1 - (leg.range[1] - idx) / TRANS)
+    }
+    if (other && w > 0) {
+      const q = other.chain[kk]
+      o += (q.o - o) * w
+      y += (q.y - y) * w
+      j += (q.j - j) * w
+    }
+
+    const [cx, cy, cz, h] = centerAt(idx)
     const lx = Math.sin(h)
     const lz = -Math.cos(h)
-    const sign = p.o < 0 ? -1 : 1
-    const o = p.o + vnoise(i / 3.4, k * 3 + 1) * p.j * sign
-    const y = p.y + vnoise(i / 5.1, k * 3 + 2) * p.j * 0.55
-    return new THREE.Vector3(cx + lx * o, cy + y, cz + lz * o)
+    const sign = o < 0 ? -1 : 1
+    // The wall's variation is BEDDED, not fluted. A high-frequency octave on
+    // the lateral offset runs vertical folds down the full height of a cliff,
+    // and a lofted wall covered in even vertical folds reads as a hanging
+    // curtain — which is exactly what it did. Limestone strata are horizontal,
+    // so the fast octave belongs on the height axis and is quantised into
+    // steps: hard ledges with a slight outward batter, wandering along the
+    // wall's run so no ledge is a continuous ribbon.
+    const n1 = vnoise(idx / 3.4, kk * 3 + 1)
+    const bedRaw = vnoise(idx / 6.5, kk * 11 + 41)
+    const bed = Math.round(bedRaw * 3) / 3 // stepped, not smooth
+    const n2 = vnoise(idx / 5.1, kk * 3 + 2) * 0.55 + bed * 0.45
+    // Lateral wander is kept small on purpose. A cliff that wobbles a metre in
+    // and out between rungs stops standing up: its faces tilt back, catch the
+    // sun on their tops, and the whole wall reads as a pale drape. Most of the
+    // variation belongs on the height axis, as bedding.
+    const oo = o + (n1 * 0.78 + bed * 0.22) * j * 0.42 * sign
+    const yy = y + n2 * j * 0.85
+    return out.set(cx + lx * oo, cy + yy, cz + lz * oo)
+  }
+
+  const chainPoint = (
+    leg: (typeof art.legs)[number],
+    i: number,
+    k: number,
+  ): THREE.Vector3 => {
+    void leg
+    return chainPointAt(i, k)
   }
 
   // --- baked sun occlusion --------------------------------------------------
@@ -316,34 +445,52 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
   // --- the canyon itself ---------------------------------------------------
   const land = new MeshBuilder()
   for (const leg of art.legs) {
-    // one sample of overlap into each neighbour so legs of different width
-    // interpenetrate instead of cracking apart at the seam
-    const a = Math.max(0, leg.range[0] - 1)
-    const b = Math.min(C.length - 1, leg.range[1] + 1)
+    const a = leg.range[0]
+    const b = leg.range[1]
     for (let i = a; i < b; i++) {
       for (let k = 0; k < leg.chain.length - 1; k++) {
         const A = chainPoint(leg, i, k)
         const B = chainPoint(leg, i + 1, k)
         const Cc = chainPoint(leg, i + 1, k + 1)
         const D = chainPoint(leg, i, k + 1)
-        // a face takes the colour of whichever of its two rungs is further out
-        const p0 = leg.chain[k]
-        const p1 = leg.chain[k + 1]
-        const src = SURFACE[(p1.o >= 0 ? p1 : p0).m] ?? SURFACE.limestone
+        // Each rung carries its own material and they gradate across the face.
+        const s0 = SURFACE[leg.chain[k].m] ?? SURFACE.limestone
+        const s1 = SURFACE[leg.chain[k + 1].m] ?? SURFACE.limestone
         // Mottling, computed PER VERTEX from world position rather than per
         // face. Flat colour across a 1.5 m face is what makes low-poly ground
         // read as paper; a soft gradient across it is what stops that, and it
         // has to be a gradient or the ground becomes a patchwork of tiles.
-        const g = src.grain ?? 0
-        const tone: [number, number, number, number] = g
-          ? [mottle(A, g), mottle(B, g), mottle(Cc, g), mottle(D, g)]
-          : [1, 1, 1, 1]
-        land.quad(A, B, Cc, D, src.hex, src.shadow, tone, [
-          shadow.at(leg, i, k),
-          shadow.at(leg, i + 1, k),
-          shadow.at(leg, i + 1, k + 1),
-          shadow.at(leg, i, k + 1),
-        ])
+        const g0 = s0.grain ?? 0
+        const g1 = s1.grain ?? 0
+        const tone: [number, number, number, number] = [
+          g0 ? mottle(A, g0) : 1,
+          g0 ? mottle(B, g0) : 1,
+          g1 ? mottle(Cc, g1) : 1,
+          g1 ? mottle(D, g1) : 1,
+        ]
+        const hexes: [string, string, string, string] = [s0.hex, s0.hex, s1.hex, s1.hex]
+        const shades: [number, number, number, number] = [s0.shadow, s0.shadow, s1.shadow, s1.shadow]
+        land.quad(
+          A,
+          B,
+          Cc,
+          D,
+          hexes,
+          shades,
+          tone,
+          [
+            shadow.at(leg, i, k),
+            shadow.at(leg, i + 1, k),
+            shadow.at(leg, i + 1, k + 1),
+            shadow.at(leg, i, k + 1),
+          ],
+          [
+            shadow.aoAt(leg, i, k),
+            shadow.aoAt(leg, i + 1, k),
+            shadow.aoAt(leg, i + 1, k + 1),
+            shadow.aoAt(leg, i, k + 1),
+          ],
+        )
       }
     }
   }
@@ -365,6 +512,16 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
   // allowed to do here. The surface follows the floor it cut rather than
   // stepping between legs, so it reads as one reach.
   const byWater = new Map<string, MeshBuilder>()
+  const _wa = new THREE.Vector3()
+  const _wb = new THREE.Vector3()
+  /** Lateral world position at a fractional rung index, at the given height. */
+  const waterPoint = (i: number, kf: number, y: number) => {
+    const k0 = Math.floor(kf)
+    chainPointAt(i, k0, _wa)
+    chainPointAt(i, k0 + 1, _wb)
+    const t = kf - k0
+    return new THREE.Vector3(_wa.x + (_wb.x - _wa.x) * t, y, _wa.z + (_wb.z - _wa.z) * t)
+  }
   for (const w of art.waters) {
     let mb = byWater.get(w.material)
     if (!mb) {
@@ -372,20 +529,26 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
       byWater.set(w.material, mb)
     }
     const src = SURFACE[w.material] ?? SURFACE.river
-    const a = Math.max(0, w.range[0] - 1)
-    const b = Math.min(C.length - 1, w.range[1] + 1)
-    const SEG = 3
-    const at = (idx: number, o: number) => {
-      const [cx, , cz, h] = centerAt(idx)
-      const li = Math.max(0, Math.min(w.levels.length - 1, idx - (w.range[0] - 1)))
-      return new THREE.Vector3(cx + Math.sin(h) * o, w.levels[li], cz - Math.cos(h) * o)
-    }
+    const a = w.range[0]
+    const b = w.range[1]
+    const span = w.toK - w.fromK
+    const SEG = Math.max(1, Math.min(6, Math.round(span * 1.5)))
     for (let i = a; i < b; i++) {
+      const y0 = w.levels[Math.max(0, Math.min(w.levels.length - 1, i - a))]
+      const y1 = w.levels[Math.max(0, Math.min(w.levels.length - 1, i + 1 - a))]
       for (let k = 0; k < SEG; k++) {
-        const o0 = w.fromO + ((w.toO - w.fromO) * k) / SEG
-        const o1 = w.fromO + ((w.toO - w.fromO) * (k + 1)) / SEG
+        const kf0 = w.fromK + (span * k) / SEG
+        const kf1 = w.fromK + (span * (k + 1)) / SEG
         const tone = 1 + Math.max(0, vnoise(i / 2.6, k * 11 + 3)) * 0.05
-        mb.quad(at(i, o0), at(i + 1, o0), at(i + 1, o1), at(i, o1), src.hex, src.shadow, tone)
+        mb.quad(
+          waterPoint(i, kf0, y0),
+          waterPoint(i + 1, kf0, y1),
+          waterPoint(i + 1, kf1, y1),
+          waterPoint(i, kf1, y0),
+          src.hex,
+          src.shadow,
+          tone,
+        )
       }
     }
   }
@@ -429,6 +592,12 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
     if (slope > 0.85 && s.kind !== 'pine') continue
     if (slope > 1.0) continue // nothing roots on a cliff face
     const p = _a.clone().lerp(_b, s.t)
+    // And nothing floats. If the heightfield disagrees with this instance's
+    // base by more than a metre, the ground it was placed on is not the ground
+    // that got built, and a pine hanging in open sky is the loudest possible
+    // authoring error in a wide shot.
+    const ground = shadow.heightAt(p.x, p.z)
+    if (ground < -1e8 || Math.abs(ground - p.y) > 1.2) continue
     const variant =
       s.kind === 'pine' ? 'pine' + (Math.floor(h1(s.i * 3.7 + s.k * 11 + s.t * 13) * 3) % 3) : s.kind
     let list = kinds.get(variant)
@@ -486,6 +655,8 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
   // --- what lies past the rim ----------------------------------------------
   const beyond = new MeshBuilder()
   for (const hse of art.beyond.houses) house(beyond, hse)
+  // Buildings cast, like everything else. A town lit flat while the hillside
+  // below it is covered in long shadows reads as composited in.
   for (const r of art.beyond.ridges) ridge(beyond, r)
   for (const t of art.beyond.terraces ?? []) {
     const [w, d] = t.size
@@ -577,6 +748,7 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
     hazeFloor: art.hazeFloor,
     hazeDepth: art.hazeDepth,
     side: THREE.DoubleSide,
+    occlusionAttribute: true,
   })
   beyondMat.name = 'beyond'
   materials.push(beyondMat)

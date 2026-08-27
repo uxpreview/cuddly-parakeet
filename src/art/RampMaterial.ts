@@ -57,6 +57,8 @@ varying vec3 vWorldPos;
 #ifdef USE_OCC_ATTR
   attribute float aOcc;
   varying float vOcc;
+  attribute float aAo;
+  varying float vAo;
 #endif
 
 void main() {
@@ -69,6 +71,7 @@ void main() {
 
   #ifdef USE_OCC_ATTR
     vOcc = aOcc;
+    vAo = aAo;
   #endif
 
   vec3 objNormal = normal;
@@ -111,10 +114,12 @@ varying vec3 vWorldPos;
 
 #ifdef USE_OCC_ATTR
   varying float vOcc;
+  varying float vAo;
 #endif
 
 uniform float uOcclusion;
 uniform float uShadeDrop;
+uniform float uFlatten;
 
 ${SKY_GLSL}
 
@@ -139,10 +144,11 @@ void main() {
   // hemisphere of light: an up-facing surface gets all of it, a vertical face
   // about two thirds, an underside almost none. This is the "plus ambient" of
   // "one directional light plus ambient", and it is what models the shadow side.
-  float sky = 0.58 + 0.42 * clamp(n.y * 0.62 + 0.44, 0.0, 1.0);
-  shade *= sky;
-  // and it arrives cool, because what is lighting the shadow is that sky
-  shade = mix(shade, shade * (0.84 + 0.3 * uSkyZenith), 0.55);
+  float sky = 0.62 + 0.38 * clamp(n.y * 0.62 + 0.44, 0.0, 1.0);
+  // Tinted toward the sky, not toward white. A neutral fill added to a
+  // saturated albedo desaturates it, and the two most chroma-critical things in
+  // the chapter — the pines and the collar — are exactly what that costs.
+  shade *= sky * mix(vec3(1.0), uSkyZenith * 1.35, 0.34);
 
   // the ramp. one soft transition, widest on the shadow side so morning
   // shadows stay long and gentle
@@ -164,6 +170,14 @@ void main() {
 
   vec3 col = mix(shade, base, t);
 
+  // Contact darkening. Sky visibility, marched once at load: 1 in the open, low
+  // where the ground closes in. This is what puts a dark at the feet of the
+  // walls and in the narrows, and it is the only thing in a chapter this
+  // high-key that reaches the bottom of the value range.
+  #ifdef USE_OCC_ATTR
+    col *= mix(0.66, 1.0, smoothstep(0.22, 0.78, vAo));
+  #endif
+
   // --- fog is the sky ------------------------------------------------------
   vec3 viewDir = normalize(vWorldPos - cameraPosition);
   float dist = length(vWorldPos - cameraPosition);
@@ -173,6 +187,9 @@ void main() {
   float low = 1.0 - smoothstep(uHazeFloor, uHazeFloor + uHazeDepth, vWorldPos.y);
   fogT = clamp(fogT + low * fogT * 0.55, 0.0, 0.94);
   col = mix(col, skyColor(viewDir), fogT);
+
+  // a material allowed to disobey the light (the collar, and nothing else)
+  col = mix(col, base, uFlatten);
 
   gl_FragColor = vec4(col, uOpacity);
   #include <colorspace_fragment>
@@ -221,6 +238,8 @@ export interface RampOptions {
   occlusion?: number
   /** How far the shade side drops in value before any hue shift. */
   shadeDrop?: number
+  /** Pull the result back toward the unlit base colour. 1 = ignores the light. */
+  flatten?: number
   vertexColors?: boolean
   transparent?: boolean
   opacity?: number
@@ -272,6 +291,7 @@ export function makeRamp(opts: RampOptions = {}): THREE.ShaderMaterial {
       uOpacity: { value: opts.opacity ?? 1 },
       uOcclusion: { value: opts.occlusion ?? 0 },
       uShadeDrop: { value: opts.shadeDrop ?? 0.68 },
+      uFlatten: { value: opts.flatten ?? 0 },
     },
   })
   // the audit reads this to know which asset a material's color belongs to

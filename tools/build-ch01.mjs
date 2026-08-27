@@ -618,19 +618,25 @@ for (const leg of legs) {
   // half. The walked track is narrower than the ground it crosses: without that
   // the canyon floor is one unbroken sheet of the path value, and #EFE3C8
   // across half the frame is a white road, not a canyon.
-  const track = Math.min(W * 0.55, 1.75)
-  const bed = leg.ford ? -0.14 : 0
+  // A canyon footpath is about a metre wide, not three and a half. Keeping the
+  // bright track narrow is what stops the documented path value — #EFE3C8, the
+  // lightest hex in the chapter — from occupying half of every frame and
+  // flattening the composition into a white road.
+  const track = Math.min(W * 0.45, 1.35)
+  // the crossing is a dip you wade: the bed sits below the water level across
+  // the whole ford leg, so the path enters and leaves the water at its ends
+  const bed = leg.ford ? -0.34 : 0
   const chain = []
   for (let i = leftHalf.length - 1; i >= 1; i--) {
     const p = leftHalf[i]
     chain.push({ o: round(-p.o), y: p.y, m: p.m, j: p.j, t: p.t })
   }
   chain.push({ o: round(-leftHalf[0].o), y: leftHalf[0].y, m: leftHalf[0].m, j: leftHalf[0].j, t: 'edge' })
-  chain.push(P(-(track + 0.35), bed + 0.07, 'scree', 0.09, 'shoulder'))
+  chain.push(P(-(track + 0.85), bed + 0.09, 'scree', 0.16, 'shoulder'))
   chain.push(P(-track, bed + 0.015, leg.surface, 0.05, 'floor'))
   chain.push(P(0, bed, leg.surface, 0, 'floor'))
   chain.push(P(track, bed + 0.015, leg.surface, 0.05, 'floor'))
-  chain.push(P(track + 0.35, bed + 0.07, 'scree', 0.09, 'shoulder'))
+  chain.push(P(track + 0.85, bed + 0.09, 'scree', 0.16, 'shoulder'))
   for (const p of rightHalf) chain.push({ ...p })
 
   artLegs.push({ name: leg.name, range: legRange[leg.name], surface: leg.surface, chain })
@@ -654,13 +660,16 @@ const chainIndex = (legName, tag, nth = 0) => {
 const rawLevel = samples.map((s) => {
   const leg = legByName[s.leg]
   if (leg.deepWater) return s.y - 1.6
-  if (leg.ford) return S(anchors['ford-near']).y - 0.5
+  if (leg.ford) return S(anchors['ford-near']).y - 0.3
   return s.y - 0.95
 })
 const waterLevel = rawLevel.map((_, i) => {
   let sum = 0
   let n = 0
-  for (let k = -7; k <= 7; k++) {
+  // short enough that the ford's own level survives the smoothing: a window
+  // wider than the crossing averages it back into the reaches either side and
+  // the water ends up under the path instead of over it
+  for (let k = -3; k <= 3; k++) {
     const j = i + k
     if (j < 0 || j >= rawLevel.length) continue
     sum += rawLevel[j]
@@ -674,39 +683,52 @@ for (const leg of legs) {
   const [a, b] = legRange[leg.name]
   const chain = artLegs.find((l) => l.name === leg.name).chain
   const levels = []
-  for (let i = Math.max(0, a - 1); i <= Math.min(samples.length - 1, b + 1); i++) {
-    levels.push(waterLevel[i])
+  for (let i = a; i <= b; i++) levels.push(waterLevel[i])
+  // Reaches are expressed as fractional CROSS-SECTION RUNG indices, not as
+  // lateral offsets. The banks wander per sample, so a reach at a fixed offset
+  // cuts a ragged edge through them; a reach anchored to the waterline rung has
+  // its shoreline exactly where the bank is, every sample, for free.
+  const reach = (fromK, toK, material, opacity = 1) => {
+    if (Math.abs(toK - fromK) < 1e-3) return
+    waters.push({
+      range: [a, b],
+      fromK: round(Math.min(fromK, toK)),
+      toK: round(Math.max(fromK, toK)),
+      material,
+      opacity,
+      levels,
+    })
   }
-  const reach = (fromO, toO, material, opacity = 1) => {
-    if (toO - fromO < 0.05) return
-    waters.push({ range: [a, b], fromO: round(fromO), toO: round(toO), material, opacity, levels })
+  const tagIdx = (tag) => {
+    const hits = []
+    chain.forEach((p, i) => {
+      if (p.t === tag) hits.push(i)
+    })
+    return hits
   }
+  const wl = tagIdx('waterline')
   if (leg.ford) {
-    const outer = leg.width / 2 + (leg.pad ?? 1.6) / 2 + 6.6
-    reach(-outer, outer, 'riverShallow', 0.78)
+    // the crossing: shallow water running right across the path, bank to bank,
+    // with the gravel bed readable through it
+    if (wl.length === 2) reach(wl[0], wl[1], 'riverShallow', 0.78)
     continue
   }
   if (leg.deepWater) {
-    const outer = leg.width / 2 + 7
-    reach(-outer, outer, 'riverDeep')
+    reach(0, chain.length - 1, 'riverDeep')
     continue
   }
-  const wl = []
-  chain.forEach((p, i) => {
-    if (p.t === 'waterline') wl.push(i)
-  })
-  for (const k of wl) {
-    const sign = chain[k].o < 0 ? -1 : 1
-    const far = sign < 0 ? chain[k - 1].o : chain[k + 1].o
-    const lo = Math.min(chain[k].o, far)
-    const hi = Math.max(chain[k].o, far)
+  const bedIdx = tagIdx('bed')
+  for (let n = 0; n < wl.length; n++) {
+    const k0 = wl[n]
+    const k1 = bedIdx[n] ?? (k0 < chain.length / 2 ? k0 - 1 : k0 + 1)
     // Depth told by hue: a lighter band over the gravel at each shore, the
     // documented river value through the middle. That, and nothing else, is
     // what water is allowed to do here.
-    const shelf = Math.min(1.9, (hi - lo) * 0.24)
-    reach(lo, lo + shelf, 'riverShallow')
-    reach(lo + shelf, hi - shelf, 'river')
-    reach(hi - shelf, hi, 'riverShallow')
+    const lo = Math.min(k0, k1)
+    const hi = Math.max(k0, k1)
+    reach(lo, lo + 0.22, 'riverShallow')
+    reach(lo + 0.22, hi - 0.22, 'river')
+    reach(hi - 0.22, hi, 'riverShallow')
   }
 }
 
@@ -835,6 +857,10 @@ const beyond = { houses: [], ridges: [], sea: null, highland: [], terraces: [] }
     for (let k = 0; k < count; k++) {
       n++
       const side = -span / 2 + (span / Math.max(1, count - 1)) * k + jit(n, 3) * 4.2
+      // Street voids. A town's silhouette from above is roofs AND the dark gaps
+      // between them; an unbroken rank of roofs reads as a tent encampment.
+      const street = Math.abs(((side + span / 2) % (span / 3)) - span / 6) < 2.6
+      if (street && hash(n, 37) > 0.35) continue
       const tall = hash(n, 23) > 0.78
       const w = 4.2 + hash(n, 11) * 5.4
       const d = 4.0 + hash(n, 13) * 4.4
@@ -851,10 +877,10 @@ const beyond = { houses: [], ridges: [], sea: null, highland: [], terraces: [] }
 
   // the campanile: three times a house, so the eye has somewhere to land
   beyond.houses.push({
-    at: at(126, -16, round(e.y - 32 + 14)),
-    size: [5.4, 28, 5.4],
+    at: at(126, -16, round(e.y - 32 + 21)),
+    size: [4.0, 42, 4.0],
     rotY: round(-e.h),
-    roof: 5.0,
+    roof: 6.0,
     tower: true,
   })
 
