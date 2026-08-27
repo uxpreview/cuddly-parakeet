@@ -254,7 +254,7 @@ export function makePrintTrail(
     uniforms: {
       uMap: { value: kind === 'dog' ? dogPrintTexture() : boyPrintTexture() },
       uColor: { value: srgbTint(CH1.limestoneShadow.hex) },
-      uStrength: { value: kind === 'dog' ? 0.5 : 0.3 },
+      uStrength: { value: kind === 'dog' ? 0.5 : 0.34 },
     },
   })
   mat.name = 'print:' + kind

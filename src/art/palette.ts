@@ -150,21 +150,22 @@ export const CH1_LIGHT = {
    * plays in shade and the documented path value never once appears on screen;
    * well above it the shadows stop being long.
    *
-   * The azimuth is -15, and it is arithmetic rather than taste. The tall wall
-   * carries its rim about ten metres out and twenty-three metres up, so the sun
-   * grazes that rim when its horizontal component across the canyon is
-   * `10 * tan(30 deg) / 23`, which is fifteen degrees off the canyon's axis.
-   * At exactly that angle the wall's shadow edge falls along the middle of the
-   * floor: the wall side of the path is in cool shade, the river side is in
-   * sun, and the edge between them runs the long way down the canyon.
+   * The azimuth is +15: fifteen degrees off the canyon's axis, over the low
+   * terraced bank rather than over the tall wall.
    *
-   * Wider than this and the whole floor is in shade all morning, so the
-   * documented path value never once appears on screen. Narrower, or over the
-   * far bank instead, and nothing casts at all — the floor becomes one
-   * uniform sheet of pale gravel with no dark anywhere for the dog or the
-   * trail to read against.
+   * That is the side the chapter's own colours require. The sun has to fall on
+   * the inward face of the TALL wall, because that face is the only large
+   * surface of documented limestone the camera ever sees; put the sun on the
+   * other side and `#E3C08C` occupies zero percent of the frame the game is
+   * played in while every stone surface in the chapter lands on the shadow hex
+   * instead. Fifteen degrees is also shallow enough that light still clears the
+   * far terrace and reaches the floor, so the documented path value appears too.
+   *
+   * The trade is that the tall wall throws its shadow behind itself rather than
+   * across the floor. The floor's darks come from the far bank and the terraces
+   * instead, and from baked sky-visibility at the wall feet.
    */
-  sunDir: [-15, 30] as [number, number],
+  sunDir: [15, 30] as [number, number],
   sun: CH1.skyRim.hex, // the warm rim value is the sun's own color
   ambient: CH1.skyZenith.hex,
   /**

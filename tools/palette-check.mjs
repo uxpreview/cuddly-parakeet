@@ -56,7 +56,7 @@ const hist = await page.evaluate(() => {
     bins.set(key, (bins.get(key) ?? 0) + 1)
   }
   const total = d.length / 4
-  return { total, bins: [...bins.entries()].sort((a, b) => b[1] - a[1]).slice(0, 24) }
+  return { total, bins: [...bins.entries()].sort((a, b) => b[1] - a[1]).slice(0, 900) }
 })
 await browser.close()
 
@@ -65,7 +65,7 @@ const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2])
 console.log(`palette check — shot "${SHOT}", ${hist.total} pixels`)
 console.log('share  colour     nearest palette entry            distance')
 let worst = 0
-for (const [key, n] of hist.bins) {
+for (const [key, n] of hist.bins.slice(0, 24)) {
   const share = n / hist.total
   if (share < 0.004) continue
   const rgb = [((key >> 16) & 63) * 4 + 2, ((key >> 8) & 63) * 4 + 2, (key & 63) * 4 + 2]
@@ -82,3 +82,26 @@ for (const [key, n] of hist.bins) {
   )
 }
 console.log(`\nlargest distance from a documented hex, over regions >1% of frame: ${worst.toFixed(0)}`)
+
+// Per-hex coverage. The "largest distance" number above can be satisfied by
+// deleting half the palette — if every stone surface lands on the shadow hex,
+// nothing is far from anything and the chapter has still lost its warm value.
+// So report how much of the frame each documented hex actually occupies.
+console.log('\nper-hex coverage (share of frame within 10 and within 30 of each hex)')
+const rows = PALETTE.map((p) => {
+  let near = 0
+  let wide = 0
+  for (const [key, n] of hist.bins) {
+    const rgb = [((key >> 16) & 63) * 4 + 2, ((key >> 8) & 63) * 4 + 2, (key & 63) * 4 + 2]
+    const d = dist(rgb, p.rgb)
+    if (d <= 10) near += n
+    if (d <= 30) wide += n
+  }
+  return { id: p.id, hex: p.hex, near: near / hist.total, wide: wide / hist.total }
+})
+for (const r of rows.sort((a, b) => b.wide - a.wide)) {
+  if (r.wide < 0.002) continue
+  console.log(
+    `  ${r.id.padEnd(22)} ${r.hex}  <=10: ${(r.near * 100).toFixed(1).padStart(5)}%   <=30: ${(r.wide * 100).toFixed(1).padStart(5)}%`,
+  )
+}

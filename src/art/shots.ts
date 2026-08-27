@@ -30,10 +30,17 @@ export interface Stage {
  * with its subject in it, which is what the Gate 1 critic's note about the town
  * reading only marginally actually asks for.
  */
+/**
+ * Staged on the river bank below the ford.
+ *
+ * The river on one side and the tall wall on the other is the composition this
+ * chapter is built around: water, path, cliff, rim pines, sky, all in one
+ * frame, with the trail running up the middle of it. The gravel bar has walls
+ * both sides and no water, and the banks past the ford put the cliff four
+ * metres from the camera; this is the one stretch that shows the whole canyon.
+ */
 export const STAGE_SAMPLES = { boy: 79, dog: 93, trailFrom: 60 }
-// The boy at the rim-view trigger, the dog holding just below it on the first
-// descending switchback — which is exactly where the manifest's near-miss node
-// puts him when this camera fires.
+
 export const RIM_STAGE = { boy: 319, dog: 332, trailFrom: 306 }
 
 type Ground = (x: number, z: number, fromY: number) => { y: number } | null
@@ -153,8 +160,8 @@ export function buildShots(art: ArtTerrain, stage: Stage, cameras: CameraDef[]):
     // mostly the sunlit side. The cool wall is the accent here, not the ground
     // state: a limestone canyon at morning that renders grey-green everywhere
     // has lost the chapter, whatever its individual hexes measure.
-    const a = s(70)
-    const b = s(102)
+    const a = s(68)
+    const b = s(100)
     const lx = Math.sin(a.h)
     const lz = -Math.cos(a.h)
     shots.push({
@@ -205,21 +212,19 @@ export function buildShots(art: ArtTerrain, stage: Stage, cameras: CameraDef[]):
 
   // Prints: the trail spec at reading distance, and the grain at close range.
   {
-    // Looking down onto the trail from about head height, close enough that a
-    // single print is a shape rather than a speck. Also the closest range the
-    // grain pass is ever seen at.
-    const idx = Math.floor(stage.dogPrints.length * 0.62)
+    // The trail as the game asks you to read it: low, along the line of it, with
+    // the dog it leads to in the same frame. A camera pointed straight down at
+    // one print tells you what a print looks like and nothing about whether a
+    // trail can be followed.
+    const idx = Math.floor(stage.dogPrints.length * 0.3)
     const p = stage.dogPrints[idx]
     const a = p ? p.at : [stage.boy.at.x, stage.boy.at.y, stage.boy.at.z]
     const h = p ? p.heading : 0
-    // stand back along the trail and look down at it
-    const bx = a[0] - Math.sin(h) * 1.5
-    const bz = a[2] - Math.cos(h) * 1.5
     shots.push({
       id: 'prints',
       label: 'Prints: the trail the game asks you to read',
-      position: [bx, a[1] + 1.5, bz],
-      lookAt: [a[0] + Math.sin(h) * 0.6, a[1], a[2] + Math.cos(h) * 0.6],
+      position: [a[0] - Math.sin(h) * 2.2, a[1] + 1.05, a[2] - Math.cos(h) * 2.2],
+      lookAt: [a[0] + Math.sin(h) * 7, a[1] + 0.35, a[2] + Math.cos(h) * 7],
       fov: 46,
     })
   }

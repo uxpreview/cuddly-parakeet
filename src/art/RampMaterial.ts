@@ -156,16 +156,31 @@ void main() {
   // Nothing is LIFTED by the sky — a surface in shade renders its shade colour,
   // which is the whole point of the documented shadow-side hex. Only what the
   // sky cannot reach falls below it: undersides, overhangs, the backs of ledges.
+  //
+  // And the fill is COLOURLESS. An earlier pass tinted it toward the sky hex
+  // reasoning that a shadow is lit by the sky; the sky hex is #CFE3E0, hue 171,
+  // and multiplying every shaded surface in the game by a cyan-grey turned the
+  // whole world green. Sunlit limestone vanished from the frame the game is
+  // played in, the dog's coat drifted 57/255 off its documented hex, and the
+  // chapter arrived bleached. Where a surface should read cool in shade, the
+  // per-material slide toward the documented shadow-side colour is what does
+  // it — deliberately, per material, and measurably.
   float sky = 1.0 - 0.45 * clamp(-n.y, 0.0, 1.0);
-  // Tinted toward the sky, not toward white. A neutral fill added to a
-  // saturated albedo desaturates it, and the two most chroma-critical things in
-  // the chapter — the pines and the collar — are exactly what that costs.
-  shade *= sky * mix(vec3(1.0), uSkyZenith * 1.42, 0.22);
+  shade *= sky;
 
-  // the ramp. one soft transition, widest on the shadow side so morning
-  // shadows stay long and gentle
+  // The ramp. One soft transition, and it has to REACH both ends.
+  //
+  // The sun runs close to the canyon's axis, so almost no surface points
+  // straight at it; with the upper stop out at 0.52 the documented lit
+  // limestone #E3C08C occupied zero percent of the frame the game is played in,
+  // and every stone surface in the chapter landed on the shadow hex instead.
+  // A palette measured that way passes by deleting half of itself.
+  //
+  // So the stop sits at 0.26: anything meaningfully turned toward the sun
+  // renders its palette hex exactly, anything turned away renders its shade
+  // exactly, and the transition between them is what stays soft.
   float l = dot(n, uSunDir);
-  float t = smoothstep(-0.30, 0.52, l);
+  float t = smoothstep(-0.34, 0.26, l);
 
   // baked terrain shadow: a surface the sun cannot see falls to its shade value
   // however it happens to be turned
@@ -197,7 +212,11 @@ void main() {
   // valley haze: everything sitting below the rim line gathers morning air,
   // so the town reads as *below and far*, not merely far
   float low = 1.0 - smoothstep(uHazeFloor, uHazeFloor + uHazeDepth, vWorldPos.y);
-  fogT = clamp(fogT + low * fogT * 0.55, 0.0, 0.94);
+  // Capped well short of 1. Above about three quarters the haze stops
+  // describing distance and starts deleting the thing: the town below the rim
+  // measured flat-lit, its opposing roof planes within 2/255 of each other, and
+  // that was not the shading failing — it was ninety-four percent fog.
+  fogT = clamp(fogT + low * fogT * 0.45, 0.0, 0.74);
   col = mix(col, skyColor(viewDir), fogT);
 
   // a material allowed to disobey the light (the collar, and nothing else)

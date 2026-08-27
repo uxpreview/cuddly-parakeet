@@ -324,7 +324,7 @@ const manifest = {
         // proportions while shadows stay long. The art path derives its fog
         // from the sky gradient; `fog.color` is the grey-box fallback.
         id: 'morning',
-        sunDir: [-15, 30],
+        sunDir: [15, 30],
         sun: '#F2DFAE',
         ambient: '#CFE3E0',
         fog: { color: '#DCE8E4', near: 34, far: 260 },
