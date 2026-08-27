@@ -3,3 +3,9 @@ dist
 .vercel
 *.local
 .DS_Store
+
+# Scratch renders from the Gate 2 critic loop. Only the judged set is kept:
+# a hundred-odd throwaway PNGs an iteration is not history worth carrying.
+renders/
+!renders/iter-07/
+!renders/iter-07/**
