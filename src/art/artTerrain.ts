@@ -839,20 +839,24 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
         // at about two metres lets the two materials interlock along a ragged
         // edge instead, which is what gravel giving way to stone looks like.
         //
-        // The noise is LONG — about seven metres — and that is the whole trick.
+        // The boundary wanders by a fixed distance in METRES, not by a fraction
+        // of a rung, and the noise driving it is about seven metres long.
         //
-        // A rung pair narrow enough not to be subdivided has a midpoint of
-        // exactly 0.5, so any noise short enough to differ between neighbouring
-        // faces turns that decision into a coin flip per face: pale gravel and
-        // warm limestone are thirty levels and a hue apart, and the floor came
-        // out a chessboard of them. At seven metres neighbouring faces agree,
-        // so the boundary swings from one rung to the next in long stretches —
-        // an interlocking margin, which is what a gravel bar meeting a talus
-        // foot actually looks like, rather than either a ruled line or a tile.
+        // Both halves of that matter. A rung pair narrow enough not to be
+        // subdivided has a midpoint of exactly 0.5, so a noise short enough to
+        // differ between neighbouring faces turns the choice into a coin flip
+        // per face — and pale gravel against warm limestone is thirty levels
+        // and a hue apart, so the floor came out a chessboard. And an amplitude
+        // measured in rungs swings the edge by whatever this rung happens to be
+        // wide, which here is metres: the margin came out as chevrons, a
+        // pattern rather than a place. Under a metre of wander, smooth along
+        // the run, is a gravel bar meeting a talus foot.
         _mc.copy(A).add(B).add(Cc).add(D).multiplyScalar(0.25)
+        const rungWidth = A.distanceTo(D) / Math.max(u1 - u0, 1e-4)
         const um =
           (u0 + u1) * 0.5 +
-          vnoise3(_mc.x * 0.14, _mc.y * 0.14, _mc.z * 0.14, 71) * 0.3
+          (vnoise3(_mc.x * 0.14, _mc.y * 0.14, _mc.z * 0.14, 71) * 0.9) /
+            Math.max(rungWidth, 0.6)
         const kMid = SURFACE[leg.chain[um < 0.5 ? k : k + 1].m] ?? SURFACE.limestone
         const s0 = kMid
         const s1 = kMid
