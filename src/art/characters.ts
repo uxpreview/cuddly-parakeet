@@ -624,6 +624,9 @@ export function buildDog(pose: DogPose = DOG_LOOK_BACK, occlusion = 0): THREE.Gr
   const COLLAR_U = 0.42 // how far up the neck, 0 at the shoulder, 1 at the skull
   const collarGeom = new THREE.CylinderGeometry(COLLAR_R, COLLAR_R * 1.04, COLLAR_W, 14, 1, true)
   tiltX(collarGeom, NECK_TILT)
+  const COLLAR_AXIS = new THREE.Vector3(0, 1, 0)
+    .applyAxisAngle(new THREE.Vector3(1, 0, 0), NECK_TILT)
+    .applyAxisAngle(new THREE.Vector3(0, 1, 0), pose.neckY)
   const cx = Math.sin(pose.neckY)
   const cz = Math.cos(pose.neckY)
   const lx = 0
@@ -655,6 +658,13 @@ export function buildDog(pose: DogPose = DOG_LOOK_BACK, occlusion = 0): THREE.Gr
     // Measured and kept: docs/decisions.md D21.
     minScreenRadiusPx: 2.5,
     minScreenCenter: COLLAR_AT,
+    // The band's own axis, so the strap keeps a readable stroke at range as
+    // well as a readable radius. See RampMaterial. Taken through exactly the
+    // transforms the geometry took: an approximation here shears the ring,
+    // because each vertex is then pushed a different distance along an axis
+    // that is not the one it is a ring around.
+    minScreenAxis: [COLLAR_AXIS.x, COLLAR_AXIS.y, COLLAR_AXIS.z],
+    minScreenWidthPx: 1.3,
     side: THREE.DoubleSide,
   })
   collarMat.name = DOG.collar.id

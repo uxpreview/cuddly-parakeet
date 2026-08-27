@@ -51,7 +51,9 @@ varying vec3 vWorldPos;
 
 #ifdef USE_MIN_SCREEN
   uniform vec3 uMinScreenCenter;
+  uniform vec3 uMinScreenAxis;
   uniform float uMinScreenPx;
+  uniform float uMinScreenWidthPx;
   /** Radians of vertical FOV per pixel: 2*tan(fov/2) / viewportHeight. */
   uniform float uPixelAngle;
 #endif
@@ -106,12 +108,29 @@ void main() {
     //
     // So the band holds a minimum radius in pixels and grows only when it is
     // below it. Close up the factor is exactly 1 and the geometry is untouched.
+    //
+    // TWO floors, not one, because a band has two dimensions and only one of
+    // them is its radius. Narrowing the collar from a 5.2 cm sleeve to a 3 cm
+    // strap — which is what stopped it reading as a chest kerchief — took its
+    // STROKE at the radius floor from 1.40 px to 0.78 px, and a sub-pixel
+    // stroke is antialiased below the audit's own saturation threshold: in
+    // vista-desktop the whole collar came back as four pixels in two
+    // fragments, under the five-by-five the mechanism exists to guarantee. So
+    // the width along the band's own axis holds a floor of its own. Up close
+    // both factors are exactly 1 and the strap is a strap.
     vec3 ctr = (modelMatrix * vec4(uMinScreenCenter, 1.0)).xyz;
     float d = length(ctr - cameraPosition);
+    vec3 axis = normalize(mat3(modelMatrix) * uMinScreenAxis);
     float need = uMinScreenPx * d * uPixelAngle;
+    float needW = uMinScreenWidthPx * d * uPixelAngle;
     vec3 rad = wp.xyz - ctr;
-    float rl = length(rad);
-    if (rl > 1e-5) wp.xyz = ctr + rad * max(1.0, need / rl);
+    float along = dot(rad, axis);
+    vec3 perp = rad - axis * along;
+    float pl = length(perp);
+    if (pl > 1e-5) perp *= max(1.0, need / pl);
+    float aw = abs(along);
+    if (aw > 1e-6) along = (along / aw) * max(aw, needW);
+    wp.xyz = ctr + perp + axis * along;
     vWorldPos = wp.xyz;
   #endif
 
@@ -411,6 +430,10 @@ export interface RampOptions {
   minScreenRadiusPx?: number
   /** Object-space center the minimum radius is measured from. */
   minScreenCenter?: [number, number, number]
+  /** Object-space axis of the band, for the separate minimum-width floor. */
+  minScreenAxis?: [number, number, number]
+  /** Half-width floor along that axis, in pixels. */
+  minScreenWidthPx?: number
   /** Height in meters below which the world gathers valley haze. */
   hazeFloor?: number
   /** How many meters the haze fades out over, above hazeFloor. */
@@ -466,7 +489,11 @@ export function makeRamp(opts: RampOptions = {}): THREE.ShaderMaterial {
       uMinScreenCenter: {
         value: new THREE.Vector3(...(opts.minScreenCenter ?? [0, 0, 0])),
       },
+      uMinScreenAxis: {
+        value: new THREE.Vector3(...(opts.minScreenAxis ?? [0, 1, 0])).normalize(),
+      },
       uMinScreenPx: { value: opts.minScreenRadiusPx ?? 0 },
+      uMinScreenWidthPx: { value: opts.minScreenWidthPx ?? 0.7 },
       // Replaced every frame from the live camera; this is a 55-degree vertical
       // field over a 900 px viewport, which is the desktop shot.
       uPixelAngle: { value: (2 * Math.tan((55 * Math.PI) / 180 / 2)) / 900 },
