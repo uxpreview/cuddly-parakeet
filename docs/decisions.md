@@ -229,11 +229,16 @@ of primitives. It knows nothing about canyons: where the canyon goes, how wide
 it is, how deep, and what stands beside it are all chapter data, emitted by
 `tools/build-ch01.mjs` from the same leg list the grey box came from.
 
-## D20 — Chapter 1's key light is azimuth +40, elevation 30
+## D20 — Chapter 1's key light is azimuth +15, elevation 30
 
 `art-direction.md` specifies Chapter 1's palette and "long soft shadows" but no
-sun position; Gate 1's manifest carried a placeholder. **Ruling:** azimuth +40,
+sun position; Gate 1's manifest carried a placeholder. **Ruling:** azimuth +15,
 elevation 30 degrees, and both numbers are load-bearing.
+
+(This entry first said +40. The value that shipped is +15, and the entry was
+wrong rather than the code: fifteen degrees is what puts the sun near enough to
+the canyon's axis that it still reaches down between the walls. Corrected here
+rather than left as a second source of truth.)
 
 Elevation 30 is where light clears the far terrace and reaches the canyon floor
 at this canyon's proportions. Below it the whole chapter plays in shade and the
@@ -248,3 +253,57 @@ sit in cool shade, and the wall throws its shadow the long way down the floor.
 
 The far bank is a terrace rather than a second cliff for the same reason, and
 because a river canyon really does cut one bank lower than the other.
+
+
+## D21 — The collar holds a floor of 2.5 pixels of projected radius
+
+`art-direction.md` spends the entire red rule on one object and states the
+payoff: "in every frame that contains the dog, the eye goes to the collar first,
+involuntarily." Modelled at a plausible 3.5 cm on a dog 60 cm tall, the collar
+measured four to nine pixels across at the distances Chapter 1 actually stages
+him at, and in a wide shot the only way to find him was to scan the frame for
+red numerically. That is the search mechanic failing, not a detail being small.
+
+**Ruling:** the collar is a BAND — an open cylinder sharing the neck's axis,
+with real width along it, so its silhouette is a ring from every angle including
+from behind, which is the angle the game shows most because he is ahead. And it
+never projects smaller than 2.5 px of radius: the vertex shader expands it about
+its own centre by whatever factor that floor requires, which is exactly 1 at any
+close range. Five pixels across is the smallest thing that survives the sampler
+as a coloured mark rather than as a tint on one grey pixel.
+
+Nothing else in the game gets this. It is a screen-space cheat, and it is
+justified for exactly one object because that object is the navigation system.
+
+## D22 — Every shading channel is flat per face
+
+`art-direction.md` asks for "low-poly geometry, flat or gradient-ramp shading"
+and says "flat shading exposes bad forms, so form is where the modeling effort
+goes". Through iteration 6 nothing in this scene was actually flat-shaded: the
+value mottling, the baked sun shadow and the baked sky visibility were all
+per-VERTEX, and a value that differs at the corners of a triangle is
+interpolated across it. Measured, that produced fifteen to twenty-one thousand
+unique colours per frame and a three-hundred-pixel sample of the nearest canyon
+wall with no seam anywhere in it.
+
+**Ruling:** mottle, sun occlusion and sky visibility are each evaluated once per
+face and written to all of that face's vertices. A polygon renders one colour.
+Three things follow and all three are accepted:
+
+- **Faces have to be small enough to shade with.** The loft's rungs are placed
+  where the canyon's shape changes, not where the shading needs them, so some
+  spans were eighteen metres. Wide spans are split until nothing exceeds 1.2 m.
+- **Shadow edges step at the size of the mesh.** That is the idiom, not a
+  defect. The per-face sun value is box filtered over the face's own footprint
+  so the step is a ramp across several faces rather than a binary flip.
+- **The baked shadow is weighted by how much the face is turned toward the
+  sun.** On a face already turned away the ray march is grazing — it skims the
+  surface it started on, over a heightfield of two-metre cells — and what it
+  returns there is noise, which under flat shading became a mosaic of tan and
+  grey blocks across the near cliff.
+
+The lit/shade ramp width also became per material. Terrain gets a narrow band,
+because a wide one on a gently curving loft is an airbrush that buries the
+facets. Characters keep a wider one, because a boy's head and a dog's barrel are
+a dozen polygons each and a closed band cuts a hard line across the curve — the
+crown becomes a hat brim and the flank becomes a saddle patch.

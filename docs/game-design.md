@@ -166,7 +166,7 @@ Chapters are JSON. The engine reads them. No chapter-specific code.
   "gait": { "from": "light", "to": "light" },   // boy's gait states, blended by route progress
   "lighting": {
     "states": [
-      { "id": "morning", "sunDir": [-40, 30], "sun": "#F2DFAE",
+      { "id": "morning", "sunDir": [15, 30], "sun": "#F2DFAE",
         "ambient": "#CFE3E0", "fog": { "color": "#DCE8E4", "near": 40, "far": 140 } }
     ],
     "blendBy": "none"                            // "none" | "routeProgress" (the woods)

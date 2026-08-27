@@ -48,6 +48,24 @@ the game cannot disagree about which two assets are allowed to be red.
 `palette-check` reports both a histogram and per-hex frame coverage. The second
 number is the one that matters: "largest distance from a documented hex" can be
 satisfied by collapsing the whole palette onto one entry, and at one point was.
+It takes a SHOT NAME, not a file path, and renders that shot live. Hand it
+anything else and it refuses rather than quietly measuring the default frame,
+which is a mistake that was made and produced numbers that looked real.
+
+There are also diagnostics under `tools/dev/`, none of which are part of the
+gate:
+
+| tool | question it answers |
+|---|---|
+| `dogread.mjs` | Where each actor is staged, and whether the key light reaches them. This is the one that found the dog standing in a terrain shadow in all six shots. |
+| `sunsweep.mjs` | How much of the canyon floor is in full sun, penumbra and shadow, per sun angle. Measured at the documented light: 58% full sun, 11% penumbra, 32% shadow. |
+| `floaters.mjs` | How far every scatter instance sits from the ground under it. |
+| `loadtime.mjs` | Build time, draw calls and triangle count. |
+| `perf.mjs`, `probe.mjs`, `occ.mjs`, `spot.mjs`, `dbg.mjs` | Renderer counters and pixel probes. |
+
+The art bible also accepts `?sunAz=` and `?sunEl=`, which rebuild the chapter at
+a different key light. The baked occlusion is computed at load, so the sun angle
+cannot be tuned from a uniform and this is the only way to measure it.
 
 ## Where things live
 
