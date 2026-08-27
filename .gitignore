@@ -8,9 +8,9 @@ dist
 # a hundred-odd throwaway PNGs an iteration is not history worth carrying.
 #
 # iter-07 is the set docs/gate-2-verdict.md cites by filename and pixel
-# coordinate; gate2b-05 is the set that answers it and the one the Gate 2b
-# critic passed. Keeping both is what makes every claim in either document
-# checkable by someone who was not here.
+# coordinate; gate2b-06 is the set that answers it and the one
+# docs/gate-2b-verdict.md cites. Keeping both is what makes every claim in
+# either document checkable by someone who was not here.
 renders/*
 !renders/iter-07/
-!renders/gate2b-05/
+!renders/gate2b-06/
