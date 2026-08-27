@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 
 // The single grain pass, barely there.
@@ -11,10 +12,11 @@ import * as THREE from 'three'
 // or two toward grey, and the documented palette hexes have to survive to the
 // pixel.
 //
-// Amount is in output units. 0.016 is roughly +/- 4 of 255 at the peak, which
-// is visible as texture on a large flat wall and invisible as noise.
+// Amount is in output units. 0.02 is roughly +/- 5 of 255 at the peak, which
+// is texture on a large flat wall and is not noise you can catch yourself
+// looking at.
 
-export const GRAIN_AMOUNT = 0.016
+export const GRAIN_AMOUNT = 0.02
 
 const VERT = /* glsl */ `
 void main() {
@@ -26,6 +28,8 @@ void main() {
 const FRAG = (sign: '+' | '-') => /* glsl */ `
 uniform float uAmount;
 uniform float uSeed;
+uniform float uSkyFloor;
+uniform vec2 uResolution;
 
 float hash(vec2 p) {
   p = fract(p * vec2(443.897, 441.423));
@@ -39,7 +43,11 @@ void main() {
   float a = hash(gl_FragCoord.xy + uSeed);
   float b = hash(floor(gl_FragCoord.xy * 0.5) + uSeed * 1.7);
   float n = (a * 0.72 + b * 0.28) * 2.0 - 1.0;
-  float v = ${sign === '+' ? 'max(n, 0.0)' : 'max(-n, 0.0)'} * uAmount;
+  // Fade the grain out over the upper part of the frame. The sky is a single
+  // flat plate, so grain there is the only modulation present and it is the one
+  // place it becomes noise you can catch yourself looking at.
+  float sky = 1.0 - smoothstep(uSkyFloor, 1.0, gl_FragCoord.y / max(1.0, uResolution.y));
+  float v = ${sign === '+' ? 'max(n, 0.0)' : 'max(-n, 0.0)'} * uAmount * mix(0.25, 1.0, sky);
   gl_FragColor = vec4(v, v, v, 1.0);
 }
 `
@@ -48,7 +56,12 @@ function grainMaterial(sign: '+' | '-', amount: number): THREE.ShaderMaterial {
   const m = new THREE.ShaderMaterial({
     vertexShader: VERT,
     fragmentShader: FRAG(sign),
-    uniforms: { uAmount: { value: amount }, uSeed: { value: 11.37 } },
+    uniforms: {
+      uAmount: { value: amount },
+      uSeed: { value: 11.37 },
+      uSkyFloor: { value: 0.55 },
+      uResolution: { value: new THREE.Vector2(1, 1) },
+    },
     depthTest: false,
     depthWrite: false,
     blending: THREE.CustomBlending,
@@ -74,6 +87,9 @@ export function Grain({ amount = GRAIN_AMOUNT }: { amount?: number }) {
     }),
     [amount],
   )
+  const size = useThree((s) => s.size)
+  add.uniforms.uResolution.value.set(size.width, size.height)
+  sub.uniforms.uResolution.value.set(size.width, size.height)
   return (
     <>
       <mesh geometry={geom} material={add} renderOrder={9998} frustumCulled={false} />

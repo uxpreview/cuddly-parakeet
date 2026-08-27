@@ -105,17 +105,19 @@ export const RED_WHITELIST = [DOG.collar.id, MAP.routeLine.id] as const
 
 /**
  * How far a surface's shade slides toward the chapter's documented shadow-side
- * color. Limestone is 1.0 because art-direction.md names its shadow exactly;
- * everything else keeps most of its own hue so the chapter reads as one light,
- * not as two palettes. See docs/decisions.md D16.
+ * color, AFTER the value drop the ramp applies first. Limestone is 1.0 because
+ * art-direction.md names its shadow exactly; everything else is low, because a
+ * shade that is mostly a lerp toward the shadow key stops being that material.
+ * The boy's shirt has to still be a faded blue shirt with his back to the sun.
+ * See docs/decisions.md D16.
  */
 export const SHADOW_MIX = {
   limestone: 1.0,
-  ground: 0.62,
-  foliage: 0.45,
-  water: 0.34,
-  character: 0.5,
-  distant: 0.3,
+  ground: 0.32,
+  foliage: 0.24,
+  water: 0.2,
+  character: 0.18,
+  distant: 0.26,
 } as const
 
 /** Chapter 1's key light and ambient, matching the manifest lighting state. */
@@ -128,13 +130,21 @@ export const CH1_LIGHT = {
    * plays in shade and the documented path value never once appears on screen;
    * well above it the shadows stop being long.
    *
-   * The azimuth is +40, over the low terraced bank rather than over the tall
-   * wall. From the other side nothing on the floor is ever lit, because a 23 m
-   * cliff four metres away blocks any morning sun there is. From this side the
-   * tall wall's inward face takes the light, the terrace and the river sit in
-   * cool shade, and the wall throws its shadow the long way down the floor.
+   * The azimuth is -15, and it is arithmetic rather than taste. The tall wall
+   * carries its rim about ten metres out and twenty-three metres up, so the sun
+   * grazes that rim when its horizontal component across the canyon is
+   * `10 * tan(30 deg) / 23`, which is fifteen degrees off the canyon's axis.
+   * At exactly that angle the wall's shadow edge falls along the middle of the
+   * floor: the wall side of the path is in cool shade, the river side is in
+   * sun, and the edge between them runs the long way down the canyon.
+   *
+   * Wider than this and the whole floor is in shade all morning, so the
+   * documented path value never once appears on screen. Narrower, or over the
+   * far bank instead, and nothing casts at all — the floor becomes one
+   * uniform sheet of pale gravel with no dark anywhere for the dog or the
+   * trail to read against.
    */
-  sunDir: [40, 30] as [number, number],
+  sunDir: [-15, 30] as [number, number],
   sun: CH1.skyRim.hex, // the warm rim value is the sun's own color
   ambient: CH1.skyZenith.hex,
   /**
@@ -142,6 +152,6 @@ export const CH1_LIGHT = {
    * back so the canyon stays crisp for the first seventy metres — the trail is
    * the navigation system and haze must never be what hides it.
    */
-  fogNear: 72,
-  fogFar: 430,
+  fogNear: 95,
+  fogFar: 470,
 }

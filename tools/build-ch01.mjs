@@ -324,7 +324,7 @@ const manifest = {
         // proportions while shadows stay long. The art path derives its fog
         // from the sky gradient; `fog.color` is the grey-box fallback.
         id: 'morning',
-        sunDir: [40, 30],
+        sunDir: [-15, 30],
         sun: '#F2DFAE',
         ambient: '#CFE3E0',
         fog: { color: '#DCE8E4', near: 34, far: 260 },
@@ -422,15 +422,23 @@ const manifest = {
 // ---- art terrain (Gate 2) --------------------------------------------------
 // Same source data as the grey box: the leg list above. This emits the LOOK of
 // the canyon, never its collision or its route — those stay exactly as Gate 1
-// left them. The engine lofts these cross-sections along the same centerline.
+// left them.
 //
 // A leg's `chain` is ONE continuous cross-section running from the far left of
 // the world to the far right: plateau, rim, cliff, talus, bank, river, floor,
-// and back up the other side. It is one chain rather than two half-profiles so
-// the world is closed — no sky under the canyon floor, no cliff that stops in
-// mid-air. Each point is `{o, y, m, j, t}`: lateral offset in meters (signed),
-// height relative to the centerline, palette material id, how far the point may
-// wander per sample, and a tag the scatter placer looks things up by.
+// and back up the other side. One chain rather than two half-profiles, so the
+// world is closed — no sky under the canyon floor, no cliff stopping in mid-air.
+//
+// EVERY chain has the same rungs in the same order, whatever the leg is: a
+// stretch with a cliff on one side and a river on the other differs from its
+// neighbour only in where those rungs sit, never in what they are. That is what
+// lets the engine BLEND across a leg boundary instead of overlapping two
+// different shapes and letting them tear through each other, which is what a
+// river crossing a path did before.
+//
+// Each point is `{o, y, m, j, t}`: signed lateral offset in meters, height
+// relative to the centerline, palette material id, how far the point may wander
+// per sample, and a tag the scatter placer looks things up by.
 
 const hash = (a, b = 0) => {
   const v = Math.sin(a * 127.1 + b * 311.7) * 43758.5453
@@ -440,64 +448,90 @@ const jit = (a, b) => hash(a, b) * 2 - 1 // -1..1, deterministic
 
 const P = (o, y, m, j = 0, t = '') => ({ o: round(o), y: round(y), m, j, t })
 
-// One side of the canyon, measured outward from the floor edge at `W`.
-// Heights make the canyon 22-25 m deep, which is what puts the rim pines and
-// the sky where the story keeps pointing: up and a long way off.
+// The thirteen rungs, outward from the floor edge. Their meaning is fixed:
+//   0 edge  1 bank  2 waterline  3 bed  4 farbank  5 talus
+//   6 lower cliff  7 ledge  8 mid cliff  9 upper cliff  10 rim  11-12 plateau
+// A side with no river collapses rungs 1-4 into the foot of its wall.
+const RUNGS = 13
 
-function wallSide(W, top = 1) {
+function wallSide(W, surf, top = 1) {
   const T = (v) => v * top
-  // The rungs are close together on purpose. A limestone wall is bedded, and
-  // bedding is what stops a lofted cliff from reading as one poured sheet: each
-  // pair of rungs becomes a band that catches the light at its own angle.
   return [
-    P(W + 0.8, 0.55, 'scree', 0.2),
-    P(W + 2.8, T(2.5), 'scree', 0.5, 'talus'),
-    P(W + 3.9, T(5.4), 'limestone', 0.55),
-    P(W + 3.5, T(7.6), 'limestone', 0.6, 'ledge'),
-    P(W + 4.6, T(10.4), 'limestone', 0.7),
-    P(W + 4.2, T(12.9), 'limestone', 0.7),
-    P(W + 5.3, T(15.8), 'limestone', 0.85),
-    P(W + 4.9, T(18.2), 'limestone', 0.85),
-    P(W + 6.2, T(21.0), 'limestone', 0.95),
+    P(W, 0.1, surf, 0.08, 'edge'),
+    P(W + 0.8, 0.5, 'scree', 0.16),
+    P(W + 1.3, 0.9, 'scree', 0.2),
+    P(W + 1.9, 1.4, 'scree', 0.28),
+    P(W + 2.4, 1.9, 'scree', 0.36),
+    P(W + 2.9, T(2.6), 'scree', 0.46, 'talus'),
+    P(W + 4.0, T(5.6), 'limestone', 0.55),
+    P(W + 3.6, T(7.8), 'limestone', 0.6, 'ledge'),
+    P(W + 4.8, T(10.8), 'limestone', 0.7),
+    P(W + 5.4, T(16.2), 'limestone', 0.85),
     P(W + 7.6, T(22.9), 'limestone', 1.0, 'rim'),
     P(W + 15.0, T(23.8), 'scrub', 1.6, 'plateau'),
     P(W + 34.0, T(22.4), 'scrub', 2.8, 'plateau'),
   ]
 }
 
-function waterSide(W) {
-  // The far bank is a terrace, not a second cliff. Two reasons, and they are
-  // the same reason: a river canyon really does cut one bank lower than the
-  // other, and a slot with full-height walls on both sides puts the entire
-  // floor in shade all morning, which would mean the documented path value
-  // never once appears on screen. The set-back upper cliff is what lets the
-  // 30-degree sun onto the floor while the near wall keeps throwing its shadow.
+// The far bank is a terrace, not a second cliff. A river canyon really does cut
+// one bank lower than the other, and a slot with full-height walls both sides
+// puts the whole floor in shade all morning, which would mean the documented
+// path value never once appears on screen.
+function waterSide(W, surf) {
   return [
+    P(W, 0.1, surf, 0.08, 'edge'),
     P(W + 0.55, -0.3, 'sand', 0.12, 'bank'),
     P(W + 1.15, -0.95, 'wetstone', 0.1, 'waterline'),
-    P(W + 8.4, -1.15, 'wetstone', 0.16, 'riverbed'),
+    P(W + 8.4, -1.15, 'wetstone', 0.16, 'bed'),
     P(W + 9.5, 0.1, 'sand', 0.22, 'farbank'),
-    P(W + 11.2, 1.9, 'scree', 0.4, 'talus'),
-    P(W + 13.0, 5.2, 'limestone', 0.5),
-    P(W + 16.5, 6.4, 'scrub', 0.7, 'terrace'),
-    P(W + 22.0, 6.9, 'scrub', 1.0, 'terrace'),
-    P(W + 25.0, 10.6, 'limestone', 0.7),
-    P(W + 27.6, 15.0, 'limestone', 0.8),
-    P(W + 26.9, 17.4, 'limestone', 0.8),
-    P(W + 29.6, 20.8, 'limestone', 1.0, 'rim'),
-    P(W + 38.0, 21.8, 'scrub', 1.8, 'plateau'),
-    P(W + 58.0, 19.8, 'scrub', 2.8, 'plateau'),
+    P(W + 11.2, 2.4, 'scree', 0.45, 'talus'),
+    P(W + 12.6, 6.0, 'limestone', 0.55),
+    P(W + 14.8, 7.2, 'scrub', 0.7, 'terrace'),
+    P(W + 20.0, 11.2, 'limestone', 0.8),
+    P(W + 23.4, 17.0, 'limestone', 0.9),
+    P(W + 26.4, 21.0, 'limestone', 1.0, 'rim'),
+    P(W + 34.0, 22.0, 'scrub', 1.8, 'plateau'),
+    P(W + 52.0, 20.0, 'scrub', 2.8, 'plateau'),
+  ]
+}
+
+// The crossing: the river runs across the path, so the near bank is a shallow
+// gravel shelf and the floor simply continues into the water.
+function fordSide(W, surf) {
+  return [
+    P(W, -0.14, surf, 0.05, 'edge'),
+    P(W + 0.5, -0.3, 'wetstone', 0.08, 'bank'),
+    P(W + 0.95, -0.6, 'wetstone', 0.1, 'waterline'),
+    P(W + 6.6, -0.9, 'wetstone', 0.16, 'bed'),
+    P(W + 8.0, 0.3, 'sand', 0.22, 'farbank'),
+    P(W + 9.8, 2.4, 'scree', 0.45, 'talus'),
+    P(W + 11.4, 6.0, 'limestone', 0.55),
+    P(W + 14.8, 7.2, 'scrub', 0.7, 'terrace'),
+    P(W + 20.0, 11.2, 'limestone', 0.8),
+    P(W + 23.4, 17.0, 'limestone', 0.9),
+    P(W + 26.4, 21.0, 'limestone', 1.0, 'rim'),
+    P(W + 34.0, 22.0, 'scrub', 1.8, 'plateau'),
+    P(W + 52.0, 20.0, 'scrub', 2.8, 'plateau'),
   ]
 }
 
 // Low enough to keep the cross-hairpin sightline Gate 1's staging depends on,
-// then a short shelf that runs into the neighbouring switchback.
-function lowWallSide(W) {
+// then a shelf that runs out to meet the neighbouring switchback.
+function lowWallSide(W, surf) {
   return [
+    P(W, 0.1, surf, 0.08, 'edge'),
     P(W + 0.55, 0.55, 'scree', 0.14),
-    P(W + 1.9, 2.05, 'limestone', 0.22, 'ledge'),
+    P(W + 0.9, 0.95, 'scree', 0.16),
+    P(W + 1.25, 1.45, 'limestone', 0.18),
+    P(W + 1.6, 1.85, 'limestone', 0.2),
+    P(W + 1.95, 2.05, 'limestone', 0.22, 'talus'),
+    P(W + 3.0, 2.2, 'scree', 0.3),
     P(W + 4.4, 2.3, 'scree', 0.4, 'shelf'),
-    P(W + 8.2, 1.4, 'limestone', 0.6),
+    P(W + 6.0, 2.1, 'scree', 0.45),
+    P(W + 7.2, 1.7, 'limestone', 0.5),
+    P(W + 8.4, 1.4, 'limestone', 0.6, 'rim'),
+    P(W + 12.0, 0.9, 'scree', 0.8, 'plateau'),
+    P(W + 20.0, -0.6, 'scree', 1.2, 'plateau'),
   ]
 }
 
@@ -507,25 +541,51 @@ function lowWallSide(W) {
 // deeper punches through the leg below and the hillside reads as stacked
 // ribbons. Dry limestone and scree, never scrub: green banding here turns a
 // Dalmatian hillside into a set of lawns.
-function parapetSide(W) {
+function parapetSide(W, surf) {
   return [
-    P(W + 0.45, 0.62, 'limestone', 0.12, 'lip'),
-    P(W + 0.9, 0.1, 'limestone', 0.12),
-    // a near-vertical riser: over eight metres of tread the drop has to happen
-    // in one metre or the terraces blend into one pale ramp
-    P(W + 1.2, -2.9, 'limestone', 0.22),
-    P(W + 3.0, -3.5, 'scree', 0.4),
-    P(W + 7.5, -3.8, 'scree', 0.7),
+    P(W, 0.1, surf, 0.07, 'edge'),
+    P(W + 0.45, 0.62, 'limestone', 0.1, 'lip'),
+    P(W + 0.72, 0.45, 'limestone', 0.1),
+    P(W + 0.92, 0.05, 'limestone', 0.12),
+    P(W + 1.08, -1.3, 'limestone', 0.16),
+    P(W + 1.25, -2.9, 'limestone', 0.2, 'talus'),
+    P(W + 2.1, -3.2, 'scree', 0.3),
+    P(W + 3.2, -3.5, 'scree', 0.36, 'shelf'),
+    P(W + 4.6, -3.6, 'scree', 0.42),
+    P(W + 6.0, -3.7, 'scree', 0.5),
+    P(W + 7.6, -3.9, 'scree', 0.6, 'rim'),
+    P(W + 12.0, -4.4, 'scree', 0.9, 'plateau'),
+    P(W + 20.0, -5.4, 'scree', 1.3, 'plateau'),
   ]
 }
 
-function fallAwaySide(W) {
+function fallAwaySide(W, surf) {
   return [
-    P(W + 1.2, -0.5, 'scree', 0.2),
-    P(W + 4.0, -3.4, 'scree', 0.6),
-    P(W + 12.0, -8.0, 'limestone', 1.2),
-    P(W + 30.0, -12.0, 'scrub', 2.0, 'plateau'),
+    P(W, 0.1, surf, 0.08, 'edge'),
+    P(W + 0.9, -0.3, 'scree', 0.14),
+    P(W + 1.6, -0.7, 'scree', 0.2),
+    P(W + 2.4, -1.2, 'scree', 0.28),
+    P(W + 3.2, -1.9, 'scree', 0.36),
+    P(W + 4.2, -2.8, 'scree', 0.45, 'talus'),
+    P(W + 6.0, -4.0, 'limestone', 0.6),
+    P(W + 8.0, -5.0, 'limestone', 0.7, 'ledge'),
+    P(W + 11.0, -6.2, 'limestone', 0.9),
+    P(W + 15.0, -7.4, 'limestone', 1.1),
+    P(W + 20.0, -8.4, 'limestone', 1.3, 'rim'),
+    P(W + 28.0, -9.6, 'scrub', 1.8, 'plateau'),
+    P(W + 44.0, -11.4, 'scrub', 2.6, 'plateau'),
   ]
+}
+
+// The plank crossing: the fallen pine is the floor and the channel walls belong
+// to the bowl legs either side of it.
+function logSide(W, surf) {
+  const out = [P(W, -0.06, surf, 0, 'edge')]
+  for (let k = 1; k < RUNGS; k++) {
+    const t = k / (RUNGS - 1)
+    out.push(P(W + 0.25 + t * 11, -1.9 - t * 2.2, 'limestone', 0.1 + t * 0.5, k === 5 ? 'talus' : ''))
+  }
+  return out
 }
 
 const wallTop = { narrows: 1.2, 'ledge-approach': 1.15, ledge: 1.12, bowl: 0.85, bowl2: 0.88, hole: 0.92 }
@@ -535,59 +595,42 @@ for (const leg of legs) {
   const W = leg.width / 2 + (leg.pad ?? 1.6) / 2
   const top = wallTop[leg.name] ?? 1
   const side = (kind) => {
+    if (leg.name === 'log') return logSide(W, leg.surface)
+    if (leg.ford) return fordSide(W, leg.surface)
     switch (kind) {
       case 'wall':
-        return wallSide(W, top)
+        return wallSide(W, leg.surface, top)
       case 'lowwall':
-        return lowWallSide(W)
+        return lowWallSide(W, leg.surface)
       case 'parapet':
-        return parapetSide(W)
+        return parapetSide(W, leg.surface)
       case 'water':
-        return waterSide(W)
+        return waterSide(W, leg.surface)
       default:
-        return fallAwaySide(W)
+        return fallAwaySide(W, leg.surface)
     }
   }
 
-  let leftHalf
-  let rightHalf
-  if (leg.name === 'log') {
-    // the crossing is the fallen pine itself; the channel walls belong to the
-    // bowl legs on either side of it
-    leftHalf = [P(W + 0.05, -0.06, 'deadwood', 0), P(W + 0.4, -2.6, 'limestone', 0.2), P(W + 9, -3.4, 'limestone', 0.6)]
-    rightHalf = leftHalf.map((p) => ({ ...p }))
-  } else {
-    leftHalf = side(leg.left)
-    rightHalf = side(leg.right)
-  }
+  const leftHalf = side(leg.left)
+  const rightHalf = side(leg.right)
 
-  // left half mirrored to negative offsets, floor across the middle, right half
+  // left half mirrored to negative offsets, the floor across the middle, right
+  // half. The walked track is narrower than the ground it crosses: without that
+  // the canyon floor is one unbroken sheet of the path value, and #EFE3C8
+  // across half the frame is a white road, not a canyon.
+  const track = Math.min(W * 0.55, 1.75)
+  const bed = leg.ford ? -0.14 : 0
   const chain = []
-  for (let i = leftHalf.length - 1; i >= 0; i--) {
+  for (let i = leftHalf.length - 1; i >= 1; i--) {
     const p = leftHalf[i]
     chain.push({ o: round(-p.o), y: p.y, m: p.m, j: p.j, t: p.t })
   }
-  // The walked track is narrower than the ground it crosses. Without this the
-  // canyon floor is one unbroken sheet of the path value, and #EFE3C8 across
-  // half the frame is a white road, not a canyon. The bright track is the
-  // leading line; the shoulders are the coarse stuff either side of it.
-  const track = Math.min(W * 0.55, 1.75)
-  const shoulder = (o) => P(o, 0.06 + Math.abs(o) * 0.02, 'scree', 0.09, 'shoulder')
-  if (W > track + 0.4) {
-    chain.push(P(-W, 0.14, 'scree', 0.1, 'edge'))
-    chain.push(shoulder(-(track + 0.35)))
-  } else {
-    chain.push(P(-W, 0.1, leg.surface, 0.08, 'edge'))
-  }
-  chain.push(P(-track, 0.015, leg.surface, 0.05, 'floor'))
-  chain.push(P(0, 0, leg.surface, 0, 'floor'))
-  chain.push(P(track, 0.015, leg.surface, 0.05, 'floor'))
-  if (W > track + 0.4) {
-    chain.push(shoulder(track + 0.35))
-    chain.push(P(W, 0.14, 'scree', 0.1, 'edge'))
-  } else {
-    chain.push(P(W, 0.1, leg.surface, 0.08, 'edge'))
-  }
+  chain.push({ o: round(-leftHalf[0].o), y: leftHalf[0].y, m: leftHalf[0].m, j: leftHalf[0].j, t: 'edge' })
+  chain.push(P(-(track + 0.35), bed + 0.07, 'scree', 0.09, 'shoulder'))
+  chain.push(P(-track, bed + 0.015, leg.surface, 0.05, 'floor'))
+  chain.push(P(0, bed, leg.surface, 0, 'floor'))
+  chain.push(P(track, bed + 0.015, leg.surface, 0.05, 'floor'))
+  chain.push(P(track + 0.35, bed + 0.07, 'scree', 0.09, 'shoulder'))
   for (const p of rightHalf) chain.push({ ...p })
 
   artLegs.push({ name: leg.name, range: legRange[leg.name], surface: leg.surface, chain })
@@ -603,57 +646,67 @@ const chainIndex = (legName, tag, nth = 0) => {
 }
 
 // ---- the river ------------------------------------------------------------
-// One continuous reach, not a rectangle per leg. Each sample contributes a
-// quad between the two waterline points of its own cross-section, so the river
-// bends with the canyon and its surface follows the floor it cut.
+// ONE surface. Levels are absolute world heights sampled per centerline step
+// and smoothed, not a drop measured from each leg's own floor: a per-leg drop
+// steps at every leg boundary and the reaches shear through each other, which
+// is exactly what a river must never do.
+
+const rawLevel = samples.map((s) => {
+  const leg = legByName[s.leg]
+  if (leg.deepWater) return s.y - 1.6
+  if (leg.ford) return S(anchors['ford-near']).y - 0.5
+  return s.y - 0.95
+})
+const waterLevel = rawLevel.map((_, i) => {
+  let sum = 0
+  let n = 0
+  for (let k = -7; k <= 7; k++) {
+    const j = i + k
+    if (j < 0 || j >= rawLevel.length) continue
+    sum += rawLevel[j]
+    n++
+  }
+  return round(sum / n)
+})
 
 const waters = []
 for (const leg of legs) {
   const [a, b] = legRange[leg.name]
   const chain = artLegs.find((l) => l.name === leg.name).chain
+  const levels = []
+  for (let i = Math.max(0, a - 1); i <= Math.min(samples.length - 1, b + 1); i++) {
+    levels.push(waterLevel[i])
+  }
+  const reach = (fromO, toO, material, opacity = 1) => {
+    if (toO - fromO < 0.05) return
+    waters.push({ range: [a, b], fromO: round(fromO), toO: round(toO), material, opacity, levels })
+  }
+  if (leg.ford) {
+    const outer = leg.width / 2 + (leg.pad ?? 1.6) / 2 + 6.6
+    reach(-outer, outer, 'riverShallow', 0.78)
+    continue
+  }
+  if (leg.deepWater) {
+    const outer = leg.width / 2 + 7
+    reach(-outer, outer, 'riverDeep')
+    continue
+  }
   const wl = []
   chain.forEach((p, i) => {
     if (p.t === 'waterline') wl.push(i)
   })
-  if (leg.ford) {
-    // the crossing: shallow water running right across the path
-    waters.push({
-      range: [a, b],
-      fromK: 0,
-      toK: chain.length - 1,
-      fromO: round(-(leg.width / 2 + 6)),
-      toO: round(leg.width / 2 + 6),
-      drop: 0.28,
-      material: 'riverShallow',
-      opacity: 0.72,
-    })
-    continue
-  }
-  if (leg.deepWater) {
-    waters.push({
-      range: [a, b],
-      fromO: round(-(leg.width / 2 + 7)),
-      toO: round(leg.width / 2 + 7),
-      drop: 1.5,
-      material: 'riverDeep',
-      opacity: 1,
-    })
-    continue
-  }
-  if (wl.length === 0) continue
   for (const k of wl) {
     const sign = chain[k].o < 0 ? -1 : 1
-    const near = chain[k].o
     const far = sign < 0 ? chain[k - 1].o : chain[k + 1].o
-    const lo = Math.min(near, far)
-    const hi = Math.max(near, far)
+    const lo = Math.min(chain[k].o, far)
+    const hi = Math.max(chain[k].o, far)
     // Depth told by hue: a lighter band over the gravel at each shore, the
     // documented river value through the middle. That, and nothing else, is
     // what water is allowed to do here.
     const shelf = Math.min(1.9, (hi - lo) * 0.24)
-    waters.push({ range: [a, b], fromO: round(lo), toO: round(lo + shelf), drop: 0.9, material: 'riverShallow', opacity: 1 })
-    waters.push({ range: [a, b], fromO: round(lo + shelf), toO: round(hi - shelf), drop: 0.9, material: 'river', opacity: 1 })
-    waters.push({ range: [a, b], fromO: round(hi - shelf), toO: round(hi), drop: 0.9, material: 'riverShallow', opacity: 1 })
+    reach(lo, lo + shelf, 'riverShallow')
+    reach(lo + shelf, hi - shelf, 'river')
+    reach(hi - shelf, hi, 'riverShallow')
   }
 }
 
@@ -664,10 +717,10 @@ for (const leg of legs) {
 // far along it the thing stands.
 
 const scatter = []
-const put = (legName, i, tag, nth, t, kind, scale, seed, lift = 0) => {
+const put = (legName, i, tag, nth, t, kind, scale, seed) => {
   const k = chainIndex(legName, tag, nth)
   if (k < 0) return
-  scatter.push({ kind, i, k, t: round(t), scale: round(scale), rot: round(hash(seed, 7) * Math.PI * 2), lift })
+  scatter.push({ kind, i, k, t: round(t), scale: round(scale), rot: round(hash(seed, 7) * Math.PI * 2) })
 }
 
 for (const leg of legs) {
@@ -676,7 +729,7 @@ for (const leg of legs) {
     const sides = [leg.left, leg.right]
     for (let sIdx = 0; sIdx < 2; sIdx++) {
       const kind = sides[sIdx]
-      const nth = sIdx // left half is chain-order 0 for a mirrored tag, right half is 1
+      const nth = sIdx
       const r = hash(i * 3.1 + sIdx * 91, 17)
       if (kind === 'wall' || kind === 'water') {
         // the rim pines: the line of them along the top is this canyon's
@@ -708,10 +761,10 @@ for (const leg of legs) {
           put(leg.name, i, 'farbank', nth, hash(i, sIdx * 29) * 0.6, 'pine', 0.4 + hash(i, sIdx * 31) * 0.3, i * 29 + sIdx)
         }
       }
-      if (sIdx === 0 && r > 0.82) {
+      if (sIdx === 0 && r > 0.86) {
         put(leg.name, i, 'shoulder', 0, hash(i, 41) * 0.9, 'rock', 0.22 + hash(i, 43) * 0.3, i * 53)
       }
-      if (sIdx === 1 && r < 0.16) {
+      if (sIdx === 1 && r < 0.13) {
         put(leg.name, i, 'shoulder', 1, hash(i, 47) * 0.9, 'rock', 0.22 + hash(i, 49) * 0.32, i * 59)
       }
       if (kind === 'lowwall') {
@@ -721,13 +774,12 @@ for (const leg of legs) {
       if (kind === 'parapet') {
         // The Gate 1 switchbacks sit eight metres apart and three metres down,
         // so from the rim they are near-parallel strips. Dressing the treads is
-        // what stops that reading as a striped ramp: scrub clumps along the
-        // lip, the odd pine, boulders fallen off the riser above.
+        // what stops that reading as a striped ramp.
         if (r < 0.62) {
-          put(leg.name, i, 'lip', nth, 0.25 + hash(i, sIdx * 5) * 0.7, 'scrub', 0.5 + hash(i, sIdx * 9) * 0.6, i * 5 + sIdx)
+          put(leg.name, i, 'shelf', nth, 0.25 + hash(i, sIdx * 5) * 0.7, 'scrub', 0.5 + hash(i, sIdx * 9) * 0.6, i * 5 + sIdx)
         }
         if (r > 0.93) {
-          put(leg.name, i, 'lip', nth, hash(i, sIdx * 25) * 0.6, 'pine', 0.45 + hash(i, sIdx * 27) * 0.35, i * 83 + sIdx)
+          put(leg.name, i, 'shelf', nth, hash(i, sIdx * 25) * 0.6, 'pine', 0.45 + hash(i, sIdx * 27) * 0.35, i * 83 + sIdx)
         }
         if (r > 0.6 && r < 0.72) {
           put(leg.name, i, 'lip', nth, 0.85 + hash(i, sIdx * 31) * 0.14, 'rock', 0.3 + hash(i, sIdx * 33) * 0.4, i * 89 + sIdx)
@@ -767,11 +819,13 @@ const beyond = { houses: [], ridges: [], sea: null, highland: [], terraces: [] }
     round(e.z + dir[1] * along + lat[1] * side),
   ]
 
-  // The reveal has to read as a TOWN below, not a hamlet. Gate 1's critic
-  // flagged that the town mass barely registered and haze was doing the work,
-  // so it is built further out, wider, and stepped down the hillside the way a
-  // Dalmatian old town actually sits: dense rows on the contour, the roofline
-  // the thing you recognise from above.
+  // The reveal has to read as a TOWN below, not a hamlet and not a shelf of
+  // identical tents. Gate 1's critic flagged that the town mass barely
+  // registered and haze was doing the work. Three things carry it: heights and
+  // footprints varied enough to make a broken roofline, one vertical at three
+  // times house height so there is a landmark to recognise, and a rock shelf
+  // under the waterside rows so the town is founded on something instead of
+  // terminating in mid-air against the sea.
   let n = 0
   for (let row = 0; row < 11; row++) {
     const along = 78 + row * 16
@@ -781,25 +835,49 @@ const beyond = { houses: [], ridges: [], sea: null, highland: [], terraces: [] }
     for (let k = 0; k < count; k++) {
       n++
       const side = -span / 2 + (span / Math.max(1, count - 1)) * k + jit(n, 3) * 4.2
-      const w = 5.0 + hash(n, 11) * 3.6
-      const d = 4.6 + hash(n, 13) * 3.2
-      const hgt = 5.2 + hash(n, 17) * 4.0
+      const tall = hash(n, 23) > 0.78
+      const w = 4.2 + hash(n, 11) * 5.4
+      const d = 4.0 + hash(n, 13) * 4.4
+      const hgt = tall ? 9.5 + hash(n, 17) * 4.5 : 4.2 + hash(n, 29) * 4.0
       beyond.houses.push({
         at: at(along + jit(n, 5) * 6.0, side, round(y + hgt / 2)),
         size: [round(w), round(hgt), round(d)],
-        rotY: round(-e.h + jit(n, 7) * 0.2),
-        roof: round(1.5 + hash(n, 19) * 1.1),
+        rotY: round(-e.h + jit(n, 7) * 0.24),
+        // pitch varies with footprint the way a real roof does
+        roof: round(1.0 + hash(n, 19) * 1.6 + w * 0.09),
       })
     }
   }
-  // one vertical, so the town has something to be recognised by
+
+  // the campanile: three times a house, so the eye has somewhere to land
   beyond.houses.push({
-    at: at(122, -14, round(e.y - 30 + 11)),
-    size: [5.0, 22, 5.0],
+    at: at(126, -16, round(e.y - 32 + 14)),
+    size: [5.4, 28, 5.4],
     rotY: round(-e.h),
-    roof: 4.2,
+    roof: 5.0,
     tower: true,
   })
+
+  // The hillside between the last switchback and the first roofs, and the shelf
+  // the town stands on. Without these the town sits on the edge of nothing, the
+  // waterside houses are cut off by the sea band, and the reveal has a hole in
+  // its middle distance.
+  for (let t = 0; t < 9; t++) {
+    beyond.terraces.push({
+      at: at(16 + t * 8, jit(t, 61) * 6, round(e.y - 3.2 - t * 1.3)),
+      size: [round(11 + t * 1.4), round(74 + t * 12)],
+      rotY: round(-e.h + jit(t, 67) * 0.06),
+      drop: round(1.6 + hash(t, 71) * 0.9),
+    })
+  }
+  for (let t = 0; t < 5; t++) {
+    beyond.terraces.push({
+      at: at(96 + t * 42, jit(t, 91) * 10, round(e.y - 15 - t * 5.2)),
+      size: [round(50 + t * 14), round(150 + t * 40)],
+      rotY: round(-e.h),
+      drop: round(6 + t * 2.5),
+    })
+  }
 
   for (let r = 0; r < 4; r++) {
     beyond.ridges.push({

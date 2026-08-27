@@ -101,53 +101,84 @@ export function buildBoy(pose: BoyPose = BOY_WALK, occlusion = 0): THREE.Group {
   const skin = BOY.skin.hex
   const S = SHADOW_MIX.character
 
-  // legs, pivoting at the hip
+  // legs: rounded and sturdy, pivoting at the hip, with the shorts wrapping the
+  // top of each one so the leg is never a separate stick beside the body
   for (const [side, ang] of [
     [1, pose.legL],
     [-1, pose.legR],
   ] as const) {
-    parts.push(limb(0.105, 0.3, 0.115, [0.075 * side, 0.38, 0], ang, skin, S))
-    // shorts skirt the top of the leg
-    const sh = place(box(0.125, 0.16, 0.135), [0, -0.07, 0])
+    const leg = capsule(0.058, 0.2, 3, 7)
+    place(leg, [0, -0.16, 0])
+    place(leg, [0, 0, 0], [ang, 0, 0])
+    place(leg, [0.072 * side, 0.4, 0])
+    parts.push(paint(leg, skin, S))
+
+    // Long enough to clear the shirt hem. The earth value is the only warm
+    // note balancing the cool shirt, and if the shirt covers it the boy reads
+    // as a child in a nightgown from the one angle the game shows him from.
+    const sh = capsule(0.081, 0.14, 3, 9)
+    place(sh, [0, -0.09, 0])
     place(sh, [0, 0, 0], [ang * 0.55, 0, 0])
-    place(sh, [0.075 * side, 0.4, 0])
+    place(sh, [0.072 * side, 0.45, 0])
     parts.push(paint(sh, BOY.shorts.hex, S))
-    // shoe
-    const shoe = place(box(0.12, 0.075, 0.19), [0, -0.3 - 0.0375, 0.025])
+
+    const shoe = place(box(0.105, 0.07, 0.185), [0, -0.295, 0.028])
     place(shoe, [0, 0, 0], [ang, 0, 0])
-    place(shoe, [0.075 * side, 0.38, 0])
+    place(shoe, [0.072 * side, 0.4, 0])
     parts.push(paint(shoe, BOY.shoes.hex, S))
   }
+  // hips: one mass bridging the two legs, so the boy has a body and not a pair
+  // of trousers hanging off a barrel
+  const hips = capsule(0.092, 0.09, 3, 9)
+  hips.rotateZ(Math.PI / 2)
+  parts.push(paint(place(hips, [0, 0.475, 0], [pose.lean * 0.5, 0, 0]), BOY.shorts.hex, S))
 
-  // torso: a soft barrel, leaning very slightly into the walk
-  const torso = place(capsule(0.135, 0.2, 3, 8), [0, 0.58, 0], [pose.lean, 0, 0])
-  parts.push(paint(torso, BOY.shirt.hex, S))
-  // shirt hem, so the shirt reads as clothing and not as a painted body
-  const hem = place(capsule(0.142, 0.02, 2, 8), [0, 0.455, 0.01], [pose.lean, 0, 0])
-  parts.push(paint(hem, BOY.shirt.hex, S, 0.94))
+  // torso: a soft barrel, leaning very slightly into the walk. Short, so the
+  // shirt hem sits above the shorts and the two-value split is visible.
+  const torso = capsule(0.132, 0.15, 3, 9)
+  parts.push(paint(place(torso, [0, 0.635, 0], [pose.lean, 0, 0]), BOY.shirt.hex, S))
 
-  // arms, pivoting at the shoulder
+  // arms. The shoulder is a ball inside the torso's silhouette and the arm
+  // hangs off it: an arm pivoting at the surface of a capsule reads as a
+  // detached box floating beside the body, which is exactly what it is.
   for (const [side, ang] of [
     [1, pose.armL],
     [-1, pose.armR],
   ] as const) {
-    parts.push(limb(0.07, 0.26, 0.075, [0.155 * side, 0.71, 0], ang, skin, S))
-    // sleeve
-    const sl = place(box(0.085, 0.1, 0.09), [0, -0.045, 0])
+    const shoulder = sphere(0.064, 8, 6)
+    parts.push(paint(place(shoulder, [0.114 * side, 0.735, 0]), BOY.shirt.hex, S))
+
+    const arm = capsule(0.041, 0.17, 3, 7)
+    place(arm, [0, -0.115, 0])
+    place(arm, [0, 0, 0], [ang, 0, 0])
+    place(arm, [0.13 * side, 0.735, 0])
+    parts.push(paint(arm, skin, S))
+
+    // short sleeve, overlapping both the shoulder and the arm
+    const sl = capsule(0.052, 0.05, 3, 8)
+    place(sl, [0, -0.045, 0])
     place(sl, [0, 0, 0], [ang, 0, 0])
-    place(sl, [0.155 * side, 0.71, 0])
+    place(sl, [0.13 * side, 0.735, 0])
     parts.push(paint(sl, BOY.shirt.hex, S))
+
+    const hand = sphere(0.042, 7, 5)
+    place(hand, [0, -0.225, 0])
+    place(hand, [0, 0, 0], [ang, 0, 0])
+    place(hand, [0.13 * side, 0.735, 0])
+    parts.push(paint(hand, skin, S))
   }
+
+  // neck, so the head sits on the body rather than balancing on it
+  parts.push(paint(place(capsule(0.052, 0.05, 3, 7), [0, 0.79, 0]), skin, S))
 
   // head: the whole silhouette hangs off this. Big, round, tipped forward a
   // touch — a boy looking down the canyon for his dog.
   const headGroup: THREE.BufferGeometry[] = []
-  headGroup.push(paint(sphere(0.185, 10, 7), skin, S))
+  headGroup.push(paint(sphere(0.185, 11, 8), skin, S))
   // hair as a cap sitting on the skull, cut off above the eyes
-  const hair = sphere(0.194, 10, 5)
+  const hair = sphere(0.194, 11, 6)
   hair.scale(1, 0.86, 1)
   headGroup.push(paint(place(hair, [0, 0.03, -0.012]), BOY.hair.hex, S))
-  // ears
   for (const side of [1, -1]) {
     const e = sphere(0.042, 6, 4)
     e.scale(0.5, 1, 0.9)
@@ -161,7 +192,7 @@ export function buildBoy(pose: BoyPose = BOY_WALK, occlusion = 0): THREE.Group {
   }
   const head = mergePainted(headGroup)
   place(head, [0, 0, 0], [pose.headP, pose.headY, 0])
-  place(head, [0, 0.945, 0])
+  place(head, [0, 0.955, 0])
   parts.push(head)
 
   const geom = mergePainted(parts)
@@ -201,7 +232,7 @@ export function buildDog(pose: DogPose = DOG_LOOK_BACK, occlusion = 0): THREE.Gr
   for (const [x, z, ang] of legs) {
     parts.push(limb(0.066, 0.245, 0.07, [x, 0.285, z], ang, coat, S))
     // white points: socks
-    const sock = place(box(0.072, 0.075, 0.078), [0, -0.245 + 0.037, 0.004])
+    const sock = place(box(0.076, 0.105, 0.082), [0, -0.245 + 0.052, 0.004])
     place(sock, [0, 0, 0], [ang, 0, 0])
     place(sock, [x, 0.285, z])
     parts.push(paint(sock, pts, S))
@@ -215,10 +246,18 @@ export function buildDog(pose: DogPose = DOG_LOOK_BACK, occlusion = 0): THREE.Gr
   const rump = capsule(0.1, 0.11, 3, 8)
   rump.rotateX(Math.PI / 2)
   parts.push(paint(place(rump, [0, 0.34, -0.16]), coat, S))
-  // white chest blaze
-  const blaze = sphere(0.062, 7, 5)
-  blaze.scale(0.7, 1.15, 0.6)
-  parts.push(paint(place(blaze, [0, 0.33, 0.24]), pts, S))
+  // White points, sized to do their job. art-direction.md puts the coat at
+  // `#E5D5BC` and the canyon gravel at `#EFE3C8` — four value points apart, near
+  // identical hue — so the coat alone cannot separate him from the ground he
+  // trots over. The white points are the value break that does, and they have
+  // to be big enough to survive at trail distance: chest, throat, muzzle, four
+  // socks and the tail tip.
+  const blaze = sphere(0.075, 8, 6)
+  blaze.scale(0.78, 1.35, 0.7)
+  parts.push(paint(place(blaze, [0, 0.34, 0.235]), pts, S))
+  const throat = sphere(0.055, 7, 5)
+  throat.scale(0.85, 1.1, 0.8)
+  parts.push(paint(place(throat, [0, 0.47, 0.25]), pts, S))
 
   // neck, angled up out of the shoulders
   const neck = place(capsule(0.062, 0.1, 3, 7), [0, 0.47, 0.21], [0.55, 0, 0])
@@ -277,7 +316,10 @@ export function buildDog(pose: DogPose = DOG_LOOK_BACK, occlusion = 0): THREE.Gr
 
   // The collar. Its own mesh, its own material, named for its asset id.
   // Red-audit whitelist entry 1 of 2. Nothing else in the game may be this hue.
-  const collarGeom = new THREE.TorusGeometry(0.072, 0.019, 4, 10)
+  // Thicker than a real collar. It is the game's entire search cue, read over
+  // the boy's shoulder at twenty metres, and a band that is anatomically right
+  // is a band nobody ever sees.
+  const collarGeom = new THREE.TorusGeometry(0.078, 0.027, 5, 12)
   collarGeom.rotateX(Math.PI / 2 - 0.55)
   collarGeom.translate(0, 0.5, 0.245)
   const collarMat = makeRamp({

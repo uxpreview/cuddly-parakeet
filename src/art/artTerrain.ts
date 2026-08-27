@@ -27,7 +27,8 @@ export interface ArtTerrain {
     range: [number, number]
     fromO: number
     toO: number
-    drop: number
+    /** Absolute world height per sample from range[0]-1 to range[1]+1. */
+    levels: number[]
     material: string
     opacity: number
   }[]
@@ -63,13 +64,13 @@ export interface ArtTerrain {
 // material id -> the palette entry it paints with, and how far that surface
 // slides toward the chapter's documented shadow-side colour in shade
 const SURFACE: Record<string, { hex: string; shadow: number; grain?: number }> = {
-  path: { hex: CH1.path.hex, shadow: SHADOW_MIX.ground },
-  gravel: { hex: CH1.path.hex, shadow: SHADOW_MIX.ground, grain: 0.022 },
-  dust: { hex: CH1.path.hex, shadow: SHADOW_MIX.ground, grain: 0.015 },
-  sand: { hex: CH1.sand.hex, shadow: SHADOW_MIX.ground },
-  wetstone: { hex: CH1.wetStone.hex, shadow: SHADOW_MIX.ground },
-  scree: { hex: CH1.scree.hex, shadow: 0.85, grain: 0.03 },
-  limestone: { hex: CH1.limestone.hex, shadow: SHADOW_MIX.limestone, grain: 0.028 },
+  path: { hex: CH1.path.hex, shadow: SHADOW_MIX.ground, grain: 0.04 },
+  gravel: { hex: CH1.path.hex, shadow: SHADOW_MIX.ground, grain: 0.045 },
+  dust: { hex: CH1.path.hex, shadow: SHADOW_MIX.ground, grain: 0.038 },
+  sand: { hex: CH1.sand.hex, shadow: SHADOW_MIX.ground, grain: 0.035 },
+  wetstone: { hex: CH1.wetStone.hex, shadow: SHADOW_MIX.ground, grain: 0.03 },
+  scree: { hex: CH1.scree.hex, shadow: 0.85, grain: 0.055 },
+  limestone: { hex: CH1.limestone.hex, shadow: SHADOW_MIX.limestone, grain: 0.042 },
   rock: { hex: CH1.limestone.hex, shadow: SHADOW_MIX.limestone, grain: 0.028 },
   scrub: { hex: CH1.scrub.hex, shadow: SHADOW_MIX.foliage, grain: 0.03 },
   deadwood: { hex: CH1.deadwood.hex, shadow: SHADOW_MIX.ground },
@@ -117,12 +118,13 @@ class MeshBuilder {
     cc: THREE.Vector3,
     hex: string,
     shade: number,
-    tone = 1,
+    tone: number | [number, number, number] = 1,
     occ: [number, number, number] = [0, 0, 0],
   ) {
-    this.push(a, hex, shade, tone, occ[0])
-    this.push(b, hex, shade, tone, occ[1])
-    this.push(cc, hex, shade, tone, occ[2])
+    const t = Array.isArray(tone) ? tone : ([tone, tone, tone] as const)
+    this.push(a, hex, shade, t[0], occ[0])
+    this.push(b, hex, shade, t[1], occ[1])
+    this.push(cc, hex, shade, t[2], occ[2])
   }
 
   quad(
@@ -132,11 +134,12 @@ class MeshBuilder {
     d: THREE.Vector3,
     hex: string,
     shade: number,
-    tone = 1,
+    tone: number | [number, number, number, number] = 1,
     occ: [number, number, number, number] = [0, 0, 0, 0],
   ) {
-    this.tri(a, b, cc, hex, shade, tone, [occ[0], occ[1], occ[2]])
-    this.tri(a, cc, d, hex, shade, tone, [occ[0], occ[2], occ[3]])
+    const t = Array.isArray(tone) ? tone : ([tone, tone, tone, tone] as const)
+    this.tri(a, b, cc, hex, shade, [t[0], t[1], t[2]], [occ[0], occ[1], occ[2]])
+    this.tri(a, cc, d, hex, shade, [t[0], t[2], t[3]], [occ[0], occ[2], occ[3]])
   }
 
   get empty() {
@@ -152,6 +155,13 @@ class MeshBuilder {
     g.computeVertexNormals() // non-indexed: every face gets its own normal
     return g
   }
+}
+
+/** Per-vertex value mottling from world position, two octaves. */
+function mottle(p: THREE.Vector3, amount: number): number {
+  const a = vnoise(p.x * 0.31 + p.z * 0.17, 3) * 0.6
+  const b = vnoise(p.x * 0.93 - p.z * 0.71, 11) * 0.4
+  return 1 + (a + b) * amount
 }
 
 export interface ArtScene {
@@ -320,11 +330,14 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
         const p0 = leg.chain[k]
         const p1 = leg.chain[k + 1]
         const src = SURFACE[(p1.o >= 0 ? p1 : p0).m] ?? SURFACE.limestone
-        // vary along BOTH axes: noise that only moves along the centerline
-        // paints vertical streaks down a cliff, which reads as water staining
-        const tone = src.grain
-          ? 1 + (vnoise(i / 2.6, k * 7 + 40) * 0.6 + vnoise(k * 1.7, i * 3 + 5) * 0.4) * src.grain
-          : 1
+        // Mottling, computed PER VERTEX from world position rather than per
+        // face. Flat colour across a 1.5 m face is what makes low-poly ground
+        // read as paper; a soft gradient across it is what stops that, and it
+        // has to be a gradient or the ground becomes a patchwork of tiles.
+        const g = src.grain ?? 0
+        const tone: [number, number, number, number] = g
+          ? [mottle(A, g), mottle(B, g), mottle(Cc, g), mottle(D, g)]
+          : [1, 1, 1, 1]
         land.quad(A, B, Cc, D, src.hex, src.shadow, tone, [
           shadow.at(leg, i, k),
           shadow.at(leg, i + 1, k),
@@ -363,8 +376,9 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
     const b = Math.min(C.length - 1, w.range[1] + 1)
     const SEG = 3
     const at = (idx: number, o: number) => {
-      const [cx, cy, cz, h] = centerAt(idx)
-      return new THREE.Vector3(cx + Math.sin(h) * o, cy - w.drop, cz - Math.cos(h) * o)
+      const [cx, , cz, h] = centerAt(idx)
+      const li = Math.max(0, Math.min(w.levels.length - 1, idx - (w.range[0] - 1)))
+      return new THREE.Vector3(cx + Math.sin(h) * o, w.levels[li], cz - Math.cos(h) * o)
     }
     for (let i = a; i < b; i++) {
       for (let k = 0; k < SEG; k++) {
@@ -413,7 +427,7 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
     const run = Math.hypot(_b.x - _a.x, _b.z - _a.z)
     const slope = run < 0.001 ? 9 : Math.abs(_b.y - _a.y) / run
     if (slope > 0.85 && s.kind !== 'pine') continue
-    if (slope > 1.5) continue
+    if (slope > 1.0) continue // nothing roots on a cliff face
     const p = _a.clone().lerp(_b, s.t)
     const variant =
       s.kind === 'pine' ? 'pine' + (Math.floor(h1(s.i * 3.7 + s.k * 11 + s.t * 13) * 3) % 3) : s.kind
@@ -588,91 +602,132 @@ function pineGeometry(variant: number): THREE.BufferGeometry {
   const mb = new MeshBuilder()
   const trunkHex = CH1.deadwood.hex
   const pineHex = CH1.pine.hex
-  // Aleppo pine: a short bare trunk that curves as it rises, then the canopy
-  // carried high, wide and flat. Half the height is trunk and the canopy is
-  // wider than the tree is tall — that proportion is the whole silhouette.
-  const hgt = [3.1, 3.7, 2.5][variant] ?? 3.1
-  const bend = [0.32, -0.42, 0.18][variant] ?? 0.25
-  const SIDES = 5
-  const curve = (t: number) => bend * t * t // no shear at the base
+
+  // Mediterranean pine, not an acacia. The first pass built a thin whippy bole
+  // carrying stacked flat plates, which is the umbrella thorn of the Serengeti
+  // and put every wide shot of this canyon in the wrong continent. The read
+  // here is: a THICK bole, barely tapering, leaning a little; and a crown of
+  // solid overlapping masses with real vertical depth, wider than it is tall
+  // but never a disc. Silhouette is a mushroom, not a shelf.
+  const hgt = [3.4, 4.1, 2.8][variant] ?? 3.4
+  const lean = [0.1, -0.14, 0.06][variant] ?? 0.08
+  const r0 = [0.23, 0.26, 0.19][variant] ?? 0.22
+  const SIDES = 6
+  const curve = (t: number) => lean * t * t * hgt
 
   const ring = (t: number, r: number) => {
     const pts: THREE.Vector3[] = []
     const y = t * hgt
     for (let i = 0; i < SIDES; i++) {
       const a = (i / SIDES) * Math.PI * 2
-      pts.push(new THREE.Vector3(Math.cos(a) * r + curve(t) * hgt, y, Math.sin(a) * r))
+      const rr = r * (0.86 + h1(i * 4.1 + variant * 3 + t * 9) * 0.28)
+      pts.push(new THREE.Vector3(Math.cos(a) * rr + curve(t), y, Math.sin(a) * rr))
     }
     return pts
   }
-  const steps = 3
-  for (let s = 0; s < steps; s++) {
-    const t0 = s / steps
-    const t1 = (s + 1) / steps
-    const a = ring(t0, 0.15 - t0 * 0.06)
-    const b = ring(t1, 0.15 - t1 * 0.06)
+  const steps = 4
+  for (let st = 0; st < steps; st++) {
+    const t0 = st / steps
+    const t1 = (st + 1) / steps
+    const a = ring(t0, r0 * (1 - t0 * 0.35))
+    const b = ring(t1, r0 * (1 - t1 * 0.35))
     for (let i = 0; i < SIDES; i++) {
       const j = (i + 1) % SIDES
-      mb.quad(a[i], b[i], b[j], a[j], trunkHex, SHADOW_MIX.ground, 0.97 + h1(s * 3 + i) * 0.06)
+      mb.quad(a[i], b[i], b[j], a[j], trunkHex, SHADOW_MIX.ground, 0.96 + h1(st * 3 + i) * 0.08)
     }
   }
 
-  // two limbs reaching out to where the canopy sits, so the crown is carried
-  const top = new THREE.Vector3(curve(1) * hgt, hgt, 0)
-  const masses: [number, number, number, number, number][] = []
-  const crown: [number, number, number][] =
+  // Two or three limbs forking near the top and carrying the crown outward.
+  const topX = curve(1)
+  const forks: [number, number, number][] =
     variant === 0
       ? [
-          [0.35, 0.15, 1.0],
-          [-0.75, -0.45, 0.72],
-          [0.55, -0.85, 0.6],
+          [0.45, 0.2, 1.0],
+          [-0.6, -0.35, 0.85],
+          [0.15, -0.7, 0.7],
         ]
       : variant === 1
         ? [
-            [-0.5, 0.35, 1.0],
-            [0.85, -0.2, 0.78],
-            [-0.2, -0.9, 0.55],
+            [-0.55, 0.4, 1.0],
+            [0.7, -0.15, 0.9],
+            [-0.1, -0.75, 0.72],
           ]
         : [
-            [0.2, 0.1, 1.0],
-            [-0.6, -0.5, 0.62],
+            [0.3, 0.15, 1.0],
+            [-0.5, -0.4, 0.8],
           ]
-  for (const [ox, oz, k] of crown) {
-    const cy = hgt + 0.45 * k + 0.18
-    masses.push([cy, 1.55 * k + 0.35, 0.34 * k + 0.12, top.x + ox * 1.25, oz * 1.25])
-    // the limb
-    const w = 0.055
-    mb.quad(
-      new THREE.Vector3(top.x - w, hgt - 0.35, -w),
-      new THREE.Vector3(top.x + w, hgt - 0.35, w),
-      new THREE.Vector3(top.x + ox * 1.25 + w, cy - 0.1, oz * 1.25 + w),
-      new THREE.Vector3(top.x + ox * 1.25 - w, cy - 0.1, oz * 1.25 - w),
-      trunkHex,
-      SHADOW_MIX.ground,
-      0.95,
-    )
+  for (const [ox, oz, k] of forks) {
+    const cy = hgt + 0.55 * k
+    const tip = new THREE.Vector3(topX + ox * 1.05, cy, oz * 1.05)
+    const w = 0.085 * k
+    // limb as a short tapered prism, so it has mass where it meets the crown
+    for (let i = 0; i < SIDES; i++) {
+      const a0 = (i / SIDES) * Math.PI * 2
+      const a1 = ((i + 1) / SIDES) * Math.PI * 2
+      const base0 = new THREE.Vector3(topX + Math.cos(a0) * r0 * 0.6, hgt - 0.45, Math.sin(a0) * r0 * 0.6)
+      const base1 = new THREE.Vector3(topX + Math.cos(a1) * r0 * 0.6, hgt - 0.45, Math.sin(a1) * r0 * 0.6)
+      const t0 = new THREE.Vector3(tip.x + Math.cos(a0) * w, tip.y - 0.1, tip.z + Math.sin(a0) * w)
+      const t1 = new THREE.Vector3(tip.x + Math.cos(a1) * w, tip.y - 0.1, tip.z + Math.sin(a1) * w)
+      mb.quad(base0, t0, t1, base1, trunkHex, SHADOW_MIX.ground, 0.95)
+    }
+    blob(mb, tip.x, cy + 0.5 * k, tip.z, 1.5 * k, 0.82 * k, pineHex, variant * 7 + ox * 13)
   }
+  // a filling mass over the fork, so the crown is one canopy and not three hats
+  blob(mb, topX, hgt + 0.95, 0, 1.35, 0.78, pineHex, variant * 11 + 5)
 
-  for (const [cy, rad, thick, ox, oz] of masses) {
-    const N = 8
-    const rim: THREE.Vector3[] = []
-    for (let i = 0; i < N; i++) {
-      const a = (i / N) * Math.PI * 2
-      const rr = rad * (0.74 + h1(i * 3.3 + variant * 9 + cy * 7) * 0.46)
-      // ragged: each rim point sits at its own height, so the silhouette is
-      // never a clean disc
-      const dy = (h1(i * 7.7 + variant * 3 + cy) - 0.5) * thick * 0.9
-      rim.push(new THREE.Vector3(ox + Math.cos(a) * rr, cy + dy, oz + Math.sin(a) * rr))
-    }
-    const apex = new THREE.Vector3(ox, cy + thick, oz)
-    const under = new THREE.Vector3(ox, cy - thick * 0.55, oz)
-    for (let i = 0; i < N; i++) {
-      const j = (i + 1) % N
-      mb.tri(apex, rim[i], rim[j], pineHex, SHADOW_MIX.foliage, 1 + h1(i + variant * 5) * 0.06 - 0.02)
-      mb.tri(under, rim[j], rim[i], pineHex, SHADOW_MIX.foliage, 0.9)
-    }
-  }
   return mb.geometry()
+}
+
+/** An irregular low-poly lump: the crown mass a pine is actually made of. */
+function blob(
+  mb: MeshBuilder,
+  cx: number,
+  cy: number,
+  cz: number,
+  rad: number,
+  hgt: number,
+  hex: string,
+  seed: number,
+) {
+  const RINGS = 3
+  const SEG = 7
+  const rows: THREE.Vector3[][] = []
+  for (let r = 0; r <= RINGS; r++) {
+    const v = r / RINGS // 0 top .. 1 bottom
+    const theta = v * Math.PI
+    const rr = Math.sin(theta)
+    const row: THREE.Vector3[] = []
+    for (let i = 0; i < SEG; i++) {
+      const a = (i / SEG) * Math.PI * 2
+      const wob = 0.78 + h1(i * 5.3 + r * 11.7 + seed) * 0.46
+      row.push(
+        new THREE.Vector3(
+          cx + Math.cos(a) * rr * rad * wob,
+          cy + Math.cos(theta) * hgt * (0.85 + h1(i * 2.1 + r + seed) * 0.3),
+          cz + Math.sin(a) * rr * rad * wob,
+        ),
+      )
+    }
+    rows.push(row)
+  }
+  const apex = new THREE.Vector3(cx, cy + hgt, cz)
+  const base = new THREE.Vector3(cx, cy - hgt * 0.85, cz)
+  for (let i = 0; i < SEG; i++) {
+    const j = (i + 1) % SEG
+    mb.tri(apex, rows[1][i], rows[1][j], hex, SHADOW_MIX.foliage, 1.02 + h1(i + seed) * 0.04)
+    for (let r = 1; r < RINGS; r++) {
+      mb.quad(
+        rows[r][i],
+        rows[r + 1][i],
+        rows[r + 1][j],
+        rows[r][j],
+        hex,
+        SHADOW_MIX.foliage,
+        0.94 + h1(i * 3 + r * 7 + seed) * 0.1,
+      )
+    }
+    mb.tri(base, rows[RINGS][j], rows[RINGS][i], hex, SHADOW_MIX.foliage, 0.88)
+  }
 }
 
 /** Limestone boulder: an irregular faceted lump, never a sphere. */
@@ -685,7 +740,7 @@ function boulderGeometry(): THREE.BufferGeometry {
     const q = new THREE.Vector3().fromBufferAttribute(p, i)
     const k = 0.62 + h1(Math.round(q.x * 97 + q.y * 31 + q.z * 13)) * 0.5
     q.multiplyScalar(k)
-    q.y = q.y * 0.72 - 0.2 // squat, and sunk into the ground it rests on
+    q.y = q.y * 0.86 - 0.46 // squat, and sunk well into the ground it rests on
     v.push(q)
   }
   for (let i = 0; i < v.length; i += 3) {

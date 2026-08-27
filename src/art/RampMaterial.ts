@@ -4,11 +4,18 @@ import { CH1, CH1_LIGHT } from './palette'
 // The whole game is shaded by this one material.
 //
 // It is a two-stop gradient ramp: a surface facing the key light renders its
-// palette hex EXACTLY, and a surface facing away renders that hex slid toward
-// the chapter's documented shadow-side color. Nothing brightens past the
-// documented value and nothing darkens past the documented shade, which is
-// what makes "the palette applied exactly as documented" checkable rather than
-// aspirational.
+// palette hex EXACTLY, and a surface facing away renders that hex DARKENED and
+// then pulled part of the way toward the chapter's documented shadow-side
+// colour. Nothing brightens past the documented value, which is what makes "the
+// palette applied exactly as documented" checkable rather than aspirational.
+//
+// The order matters, and getting it wrong was the single worst thing in the
+// first pass. Shade that is mostly a lerp toward the shadow key destroys a
+// material's identity: the boy's faded blue shirt turned into grey-green at six
+// metres, and his earth shorts turned into milk. Shade is a drop in VALUE first
+// — that is what a shadow physically is — with only as much hue shift as the
+// chapter's light justifies. Limestone is the exception and goes the whole way,
+// because art-direction.md names its shadow (`#9DA9A2`) exactly.
 //
 // The ramp is continuous. There is no terminator step and no rim/spec highlight,
 // because a hard band plus an outline is the cel-shaded grammar this project is
@@ -24,8 +31,10 @@ vec3 skyColor(vec3 dir) {
   float h = clamp(dir.y, -1.0, 1.0);
   // warm band hugs the horizon and falls off fast, per "sky #CFE3E0 warming
   // toward #F2DFAE at the rim"
-  float warm = 1.0 - smoothstep(-0.06, 0.34, h);
-  vec3 col = mix(uSkyZenith, uSkyRim, warm * warm);
+  // the warm value hugs the rim and is gone by twenty degrees up: any higher
+  // and it reads as a band across mid-sky rather than as morning light
+  float warm = 1.0 - smoothstep(-0.04, 0.2, h);
+  vec3 col = mix(uSkyZenith, uSkyRim, warm * warm * warm);
   // a touch cooler and darker below the horizon line so the canyon floor haze
   // does not glow brighter than the ground it sits behind
   col = mix(col, uSkyZenith * 0.92, smoothstep(0.0, -0.22, h));
@@ -105,6 +114,7 @@ varying vec3 vWorldPos;
 #endif
 
 uniform float uOcclusion;
+uniform float uShadeDrop;
 
 ${SKY_GLSL}
 
@@ -120,11 +130,19 @@ void main() {
   #else
     float shadowMix = uShadowMix;
   #endif
-  vec3 shade = mix(base, uShadowKey, shadowMix);
+  // value first, hue second
+  vec3 shade = mix(base * uShadeDrop, uShadowKey, shadowMix);
 
-  // sky bounce: an up-facing surface in shade picks up a little zenith, which
-  // is why morning shadow here reads cool rather than dead
-  shade = mix(shade, shade * (0.86 + 0.28 * uSkyZenith), clamp(n.y, 0.0, 1.0) * 0.5);
+  // Skylight. In shade the key light contributes nothing, so without this every
+  // face of a cliff renders the same value and a wall in shadow has no form at
+  // all — which is what flat shading is supposed to expose. A whole sky is a
+  // hemisphere of light: an up-facing surface gets all of it, a vertical face
+  // about two thirds, an underside almost none. This is the "plus ambient" of
+  // "one directional light plus ambient", and it is what models the shadow side.
+  float sky = 0.58 + 0.42 * clamp(n.y * 0.62 + 0.44, 0.0, 1.0);
+  shade *= sky;
+  // and it arrives cool, because what is lighting the shadow is that sky
+  shade = mix(shade, shade * (0.84 + 0.3 * uSkyZenith), 0.55);
 
   // the ramp. one soft transition, widest on the shadow side so morning
   // shadows stay long and gentle
@@ -142,7 +160,7 @@ void main() {
   // all the way: the canyon floor in shadow is still limestone dust lit by a
   // whole sky, and crushing it to the shade colour is how a morning turns into
   // an overcast afternoon.
-  t = mix(t, t * 0.34, occ);
+  t = mix(t, t * 0.22, occ);
 
   vec3 col = mix(shade, base, t);
 
@@ -201,6 +219,8 @@ export interface RampOptions {
   occlusionAttribute?: boolean
   /** Flat occlusion for a whole object (a character standing in shade). */
   occlusion?: number
+  /** How far the shade side drops in value before any hue shift. */
+  shadeDrop?: number
   vertexColors?: boolean
   transparent?: boolean
   opacity?: number
@@ -251,6 +271,7 @@ export function makeRamp(opts: RampOptions = {}): THREE.ShaderMaterial {
       uHazeDepth: { value: opts.hazeDepth ?? 16 },
       uOpacity: { value: opts.opacity ?? 1 },
       uOcclusion: { value: opts.occlusion ?? 0 },
+      uShadeDrop: { value: opts.shadeDrop ?? 0.68 },
     },
   })
   // the audit reads this to know which asset a material's color belongs to

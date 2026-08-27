@@ -87,6 +87,8 @@ export interface BlobShadowOptions {
   /** Sun azimuth and elevation in degrees, matching the chapter light. */
   sunDir: [number, number]
   strength?: number
+  /** Fraction of the radius held at full darkness before the falloff. */
+  core?: number
 }
 
 export function makeBlobShadow(opts: BlobShadowOptions): THREE.Mesh {
@@ -113,7 +115,7 @@ export function makeBlobShadow(opts: BlobShadowOptions): THREE.Mesh {
       // rather than converted to linear on the way in.
       uColor: { value: srgbTint(CH1.limestoneShadow.hex) },
       uStrength: { value: opts.strength ?? 0.55 },
-      uCore: { value: 0.45 },
+      uCore: { value: opts.core ?? 0.45 },
     },
   })
   mat.name = 'blob-shadow'
@@ -129,8 +131,12 @@ export function makeBlobShadow(opts: BlobShadowOptions): THREE.Mesh {
 // of painted textures. Drawn here procedurally so they are original to this
 // game and so a surface change is a parameter, never a re-export.
 //
-//   dog:  four toe ovals around a larger heel pad, ~11 cm across, 0.42 strength
-//   boy:  a rounded sole, ball plus heel, ~15 cm long, 0.26 strength
+//   dog:  four toe ovals around a larger heel pad, ~16 cm across, 0.5 strength
+//   boy:  a rounded sole, ball plus heel, ~19 cm long, 0.3 strength
+//
+// Both are larger and darker than the anatomy strictly wants. They are read at
+// six and a half metres over the boy's shoulder, on pale gravel, in bright
+// morning light, and a print that is only correct is a print nobody sees.
 //
 // The dog's are the darker of the two on purpose. They are the trail the game
 // is asking the player to read, and the boy's must never compete with them.
@@ -234,7 +240,7 @@ export function makePrintTrail(
   kind: 'dog' | 'boy',
 ): THREE.InstancedMesh | null {
   if (steps.length === 0) return null
-  const size = kind === 'dog' ? 0.115 : 0.155
+  const size = kind === 'dog' ? 0.165 : 0.195
   const geom = new THREE.PlaneGeometry(size * (kind === 'dog' ? 0.95 : 0.62), size)
   geom.rotateX(-Math.PI / 2)
 
@@ -244,7 +250,7 @@ export function makePrintTrail(
     uniforms: {
       uMap: { value: kind === 'dog' ? dogPrintTexture() : boyPrintTexture() },
       uColor: { value: srgbTint(CH1.limestoneShadow.hex) },
-      uStrength: { value: kind === 'dog' ? 0.42 : 0.26 },
+      uStrength: { value: kind === 'dog' ? 0.5 : 0.3 },
     },
   })
   mat.name = 'print:' + kind

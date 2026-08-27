@@ -165,14 +165,19 @@ export function buildShots(art: ArtTerrain, stage: Stage, cameras: CameraDef[]):
   // Dog read: he is 24 m off on pale gravel with the wall behind him. If the
   // collar does not take the eye here, the whole search mechanic is broken.
   {
+    // He is fourteen metres off on pale gravel with the wall behind him, and
+    // the camera is where the boy's eyes would be. If the collar does not take
+    // the eye here the whole search mechanic is broken.
     const d = stage.dog.at
-    const a = s(STAGE_SAMPLES.dog - 16)
+    const a = s(STAGE_SAMPLES.dog - 10)
+    const lx = Math.sin(a.h)
+    const lz = -Math.cos(a.h)
     shots.push({
       id: 'dog-read',
       label: 'Dog read: the collar at trail distance',
-      position: [a.x, a.y + 1.55, a.z],
-      lookAt: [d.x, d.y + 0.45, d.z],
-      fov: 50,
+      position: [a.x - lx * 0.6, a.y + 1.3, a.z - lz * 0.6],
+      lookAt: [d.x, d.y + 0.4, d.z],
+      fov: 44,
     })
   }
 
@@ -184,22 +189,34 @@ export function buildShots(art: ArtTerrain, stage: Stage, cameras: CameraDef[]):
     shots.push({
       id: 'ford',
       label: 'Ford: water as flat colour',
-      position: [f.x - Math.cos(f.h) * 9 + lx * 3.5, f.y + 2.2, f.z - Math.sin(f.h) * 9 + lz * 3.5],
-      lookAt: [f.x + Math.cos(f.h) * 3, f.y - 0.2, f.z + Math.sin(f.h) * 3],
+      position: [
+        f.x - Math.cos(f.h) * 11 + lx * 1.5,
+        f.y + 2.6,
+        f.z - Math.sin(f.h) * 11 + lz * 1.5,
+      ],
+      lookAt: [f.x + Math.cos(f.h) * 2 + lx * 2, f.y - 0.3, f.z + Math.sin(f.h) * 2 + lz * 2],
       fov: 50,
     })
   }
 
   // Prints: the trail spec at reading distance, and the grain at close range.
   {
-    const p = stage.dogPrints[Math.floor(stage.dogPrints.length * 0.55)]
+    // Looking down onto the trail from about head height, close enough that a
+    // single print is a shape rather than a speck. Also the closest range the
+    // grain pass is ever seen at.
+    const idx = Math.floor(stage.dogPrints.length * 0.62)
+    const p = stage.dogPrints[idx]
     const a = p ? p.at : [stage.boy.at.x, stage.boy.at.y, stage.boy.at.z]
+    const h = p ? p.heading : 0
+    // stand back along the trail and look down at it
+    const bx = a[0] - Math.sin(h) * 1.5
+    const bz = a[2] - Math.cos(h) * 1.5
     shots.push({
       id: 'prints',
       label: 'Prints: the trail the game asks you to read',
-      position: [a[0] - 1.6, a[1] + 2.0, a[2] - 1.9],
-      lookAt: [a[0] + 1.1, a[1], a[2] + 1.3],
-      fov: 48,
+      position: [bx, a[1] + 1.5, bz],
+      lookAt: [a[0] + Math.sin(h) * 0.6, a[1], a[2] + Math.cos(h) * 0.6],
+      fov: 46,
     })
   }
 

@@ -57,9 +57,12 @@ function Scene({ shot, onShots }: { shot: string; onShots: (s: Shot[]) => void }
     group.add(dog)
 
     // --- blob shadows ------------------------------------------------------
-    for (const [actor, foot, hgt, strength, occ] of [
-      [boy, 0.34, 1.15, 0.55, boyOcc],
-      [dog, 0.34, 0.55, 0.5, dogOcc],
+    // The dog's is tighter and darker than the boy's on purpose: he is the
+    // thing the player is looking for, on ground almost exactly his own value,
+    // and the contact shadow is what stops him floating on it.
+    for (const [actor, foot, hgt, strength, occ, core] of [
+      [boy, 0.34, 1.15, 0.5, boyOcc, 0.45],
+      [dog, 0.26, 0.5, 0.68, dogOcc, 0.6],
     ] as const) {
       // no cast shadow where there is no sun to cast it
       if (occ > 0.8) continue
@@ -68,6 +71,7 @@ function Scene({ shot, onShots }: { shot: string; onShots: (s: Shot[]) => void }
         height: hgt,
         sunDir: CH1_LIGHT.sunDir,
         strength,
+        core,
       })
       blob.position.set(actor.position.x, actor.position.y + 0.02, actor.position.z)
       group.add(blob)
