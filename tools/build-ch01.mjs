@@ -372,7 +372,9 @@ const manifest = {
     { id: 'ford-crossed', shape: 'box', at: pos(fordFarI + 1), size: [7, 4, 7] },
     { id: 'fallen-pine', shape: 'box', at: pos(anchors['log-near']), size: [10, 5, 10] },
     { id: 'log-crossed', shape: 'box', at: pos(logFarI + 1), size: [6, 4, 6] },
-    { id: 'rim-view', shape: 'box', at: pos(legAt('rim', 0.72)), size: [16, 7, 16] },
+    // kept tight: the framed reveal is a beat, not a blind traversal — the
+    // player loses direct sight of the boy while it holds (critic flag #1)
+    { id: 'rim-view', shape: 'box', at: pos(legAt('rim', 0.72)), size: [10, 7, 10] },
     { id: 'rim-gate', shape: 'box', at: pos(exitI), size: [8, 5, 8] },
   ],
   cameras: [
