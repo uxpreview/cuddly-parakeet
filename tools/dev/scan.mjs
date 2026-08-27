@@ -8,7 +8,13 @@
 // step between the MEDIAN of the five pixels either side, which averages the
 // grain down to well under a level.
 //
-//   node tools/dev/scan.mjs <shot> <row-fraction> [x0 x1] [--portrait]
+//   node tools/dev/scan.mjs <shot> <row-fraction> [x0 x1] [--portrait] [--column]
+//
+// --column scans DOWN a column instead of across a row, with the first argument
+// read as the column's x fraction and the range as y. Use it on cliffs: bedding
+// is horizontal, so a horizontal scanline runs ALONG one stratum and reports a
+// wall with strata as perfectly flat. That is a property of the instrument, not
+// of the wall.
 //
 // Prints: the run lengths between boundaries, the luminance range inside each
 // run, and the largest monotone ramp found. Under flat shading no run should
@@ -19,6 +25,7 @@ import { existsSync } from 'node:fs'
 
 const args = process.argv.slice(2)
 const portrait = args.includes('--portrait')
+const column = args.includes('--column')
 const rest = args.filter((a) => !a.startsWith('--'))
 const shot = rest[0] ?? 'hero'
 const rowFrac = Number(rest[1] ?? 0.66)
@@ -40,17 +47,20 @@ await p.goto(`http://127.0.0.1:5174/?scene=art-bible&shot=${shot}&bare=1`, { wai
 await p.waitForFunction(() => !!window.__artShot, null, { timeout: 60000 })
 await p.waitForTimeout(700)
 
-const out = await p.evaluate(({ rowFrac, x0f, x1f }) => {
+const out = await p.evaluate(({ rowFrac, x0f, x1f, column }) => {
   const cv = document.querySelector('canvas')
   const c2 = document.createElement('canvas')
   c2.width = cv.width
   c2.height = cv.height
   const ctx = c2.getContext('2d')
   ctx.drawImage(cv, 0, 0)
-  const y = Math.round(rowFrac * (cv.height - 1))
-  const x0 = Math.round(x0f * (cv.width - 1))
-  const x1 = Math.round(x1f * (cv.width - 1))
-  const d = ctx.getImageData(x0, y, x1 - x0 + 1, 1).data
+  const across = column ? cv.height : cv.width
+  const y = Math.round(rowFrac * ((column ? cv.width : cv.height) - 1))
+  const x0 = Math.round(x0f * (across - 1))
+  const x1 = Math.round(x1f * (across - 1))
+  const d = column
+    ? ctx.getImageData(y, x0, 1, x1 - x0 + 1).data
+    : ctx.getImageData(x0, y, x1 - x0 + 1, 1).data
   const n = x1 - x0 + 1
   const L = new Float64Array(n)
   const hex = []
@@ -126,9 +136,9 @@ const out = await p.evaluate(({ rowFrac, x0f, x1f }) => {
     // than only its summary statistics
     profile: Array.from({ length: Math.floor(n / 16) }, (_, i) => +med[i * 16].toFixed(0)),
   }
-}, { rowFrac, x0f, x1f })
+}, { rowFrac, x0f, x1f, column })
 
-console.log(`shot=${shot} ${out.width}x${out.height} row y=${out.y}  x span ${out.n}px`)
+console.log(`shot=${shot} ${out.width}x${out.height} ${column ? 'column x' : 'row y'}=${out.y}  span ${out.n}px`)
 console.log(`  L ${out.Lends[0]} -> ${out.Lends[1]}   boundaries found: ${out.boundaries}`)
 console.log(`  longest monotone ramp: ${out.longestMonotone.px}px, dL=${out.longestMonotone.deltaL}, from x=${out.longestMonotone.atX}`)
 const rs = out.runs

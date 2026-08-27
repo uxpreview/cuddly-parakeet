@@ -4,8 +4,13 @@ dist
 *.local
 .DS_Store
 
-# Scratch renders from the Gate 2 critic loop. Only the judged set is kept:
+# Scratch renders from the Gate 2 critic loop. Only the judged sets are kept:
 # a hundred-odd throwaway PNGs an iteration is not history worth carrying.
-renders/
+#
+# iter-07 is the set docs/gate-2-verdict.md cites by filename and pixel
+# coordinate; gate2b-05 is the set that answers it and the one the Gate 2b
+# critic passed. Keeping both is what makes every claim in either document
+# checkable by someone who was not here.
+renders/*
 !renders/iter-07/
-!renders/iter-07/**
+!renders/gate2b-05/

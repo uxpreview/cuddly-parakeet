@@ -20,7 +20,7 @@ const WORLD_RAMP: [number, number] = [-0.17, 0.06]
  * whole wall into a flat sheet. This is the term that puts the facets back; see
  * RampMaterial for the measurement.
  */
-const WORLD_MODEL = 0.17
+const WORLD_MODEL = 0.19
 
 /**
  * Foliage gets a wider band than rock.
@@ -747,7 +747,14 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
     // riverbed, and the terraces in between get a little.
     const steep = Math.abs(_un.y) / spanLen
     const sm = Math.max(0, Math.min(1, (steep - 0.3) / 0.4))
-    const amp = Math.min(spanLen * 0.05, 0.5) * sm * sm * (3 - 2 * sm)
+    // An ABSOLUTE amplitude, not a fraction of the rung's width.
+    //
+    // Scaled by the span, a bank whose rungs are a metre apart got six
+    // centimetres of relief while a twenty-metre cliff face got half a metre —
+    // exactly backwards for the frame the game is played in, where the near
+    // bank is a quarter of the picture and the far cliff is small. Relief is a
+    // property of limestone, not of how the loft happened to be rung.
+    const amp = Math.min(0.26, spanLen * 0.28) * sm * sm * (3 - 2 * sm)
     const horiz = Math.hypot(_un.x, _un.z) || 1
     out.x += (_un.x / horiz) * px * n * amp
     out.z += (_un.z / horiz) * px * n * amp
@@ -760,7 +767,6 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
   const centroid = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3, d: THREE.Vector3) =>
     _cen.copy(a).add(b).add(c).add(d).multiplyScalar(0.25)
 
-  const _mc = new THREE.Vector3()
   const _n0 = new THREE.Vector3()
   const _n1 = new THREE.Vector3()
   const _sa = new THREE.Vector3()
@@ -785,11 +791,32 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
     const subForRung: number[] = []
     for (let k = 0; k < leg.chain.length - 1; k++) {
       let widest = 0
+      let steepSum = 0
+      let n = 0
       for (let i = a; i <= b; i++) {
-        const w = chainPoint(leg, i, k).distanceTo(chainPoint(leg, i, k + 1))
+        const p0 = chainPoint(leg, i, k)
+        const p1 = chainPoint(leg, i, k + 1)
+        const w = p0.distanceTo(p1)
         if (w > widest) widest = w
+        if (w > 1e-4) {
+          steepSum += Math.abs(p1.y - p0.y) / w
+          n++
+        }
       }
-      subForRung[k] = Math.max(1, Math.min(12, Math.ceil(widest / MAX_SPAN)))
+      // A STEEP rung gets smaller faces than a level one.
+      //
+      // At 1.2 m everywhere, a bank whose rungs happen to be a metre apart was
+      // never subdivided at all — so it had no interior vertices, so the bedding
+      // relief had nowhere to act, so it rendered as a single smooth sheet. Ten
+      // consecutive faces of the near wall in hero came back with every normal
+      // inside a nine-degree cone and every vertex colour within 0.011: many
+      // polygons, one shade, which is the airbrush wearing flat shading's
+      // clothes. The cliffs are the surfaces flat shading exists to expose and
+      // they are the ones that need faces to expose them with; the canyon floor
+      // is nearly planar and gains nothing from more.
+      const steep = n ? steepSum / n : 0
+      const target = steep > 0.5 ? 0.62 : MAX_SPAN
+      subForRung[k] = Math.max(1, Math.min(24, Math.ceil(widest / target)))
     }
     for (let i = a; i < b; i++) {
       for (let k = 0; k < leg.chain.length - 1; k++) {
@@ -865,7 +892,6 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
     Cc: THREE.Vector3,
     D: THREE.Vector3,
   ) {
-    void i
     {
       {
         // Each rung carries its own material and they gradate across the face.
@@ -902,24 +928,26 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
         // at about two metres lets the two materials interlock along a ragged
         // edge instead, which is what gravel giving way to stone looks like.
         //
-        // The boundary wanders by a fixed distance in METRES, not by a fraction
-        // of a rung, and the noise driving it is about seven metres long.
+        // The boundary wanders ALONG THE RUN and nowhere else.
         //
-        // Both halves of that matter. A rung pair narrow enough not to be
-        // subdivided has a midpoint of exactly 0.5, so a noise short enough to
-        // differ between neighbouring faces turns the choice into a coin flip
-        // per face — and pale gravel against warm limestone is thirty levels
-        // and a hue apart, so the floor came out a chessboard. And an amplitude
-        // measured in rungs swings the edge by whatever this rung happens to be
-        // wide, which here is metres: the margin came out as chevrons, a
-        // pattern rather than a place. Under a metre of wander, smooth along
-        // the run, is a gravel bar meeting a talus foot.
-        _mc.copy(A).add(B).add(Cc).add(D).multiplyScalar(0.25)
+        // Two earlier attempts at this both failed the same way. A 3-D noise
+        // sampled at the face's own centroid varies across the cross-section as
+        // well as along it, and an unsubdivided rung pair has a midpoint of
+        // exactly 0.5 — so the choice became a coin flip that changed from one
+        // quad to the next, and pale gravel against warm limestone is thirty
+        // levels and a hue apart. The result was a two-tone checkerboard with
+        // clean four-cell X-junctions sitting exactly on the mesh grid: a
+        // pattern that advertises the topology, which is worse than the ruled
+        // stripe it was trying to avoid.
+        //
+        // Keying the offset on the SAMPLE INDEX alone fixes it structurally.
+        // Every face at a given station down the canyon shares one offset, so
+        // the boundary cannot dither across the rungs; it is one line, and it
+        // wanders because the line wanders. Thirteen and a half metres of
+        // wavelength, under a metre of amplitude.
         const rungWidth = A.distanceTo(D) / Math.max(u1 - u0, 1e-4)
         const um =
-          (u0 + u1) * 0.5 +
-          (vnoise3(_mc.x * 0.14, _mc.y * 0.14, _mc.z * 0.14, 71) * 0.9) /
-            Math.max(rungWidth, 0.6)
+          (u0 + u1) * 0.5 + (vnoise(i / 9, 71) * 0.9) / Math.max(rungWidth, 0.6)
         const kMid = SURFACE[leg.chain[um < 0.5 ? k : k + 1].m] ?? SURFACE.limestone
         const s0 = kMid
         const s1 = kMid
@@ -1071,6 +1099,7 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
     // hanging off a cliff face is the clearest way to lose the low-poly read.
     const run = Math.hypot(_b.x - _a.x, _b.z - _a.z)
     const slope = run < 0.001 ? 9 : Math.abs(_b.y - _a.y) / run
+    if (slope > 0.55 && s.kind === 'rock') continue
     if (slope > 0.85 && s.kind !== 'pine') continue
     if (slope > 1.0) continue // nothing roots on a cliff face
     // Placed with the SAME function that generated the surface, and jittered
@@ -1108,7 +1137,13 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
     // walking camera the far bank was littered with pale wedges that read as
     // hovering paper. A quarter of its own size under the surface is what makes
     // it a rock that fell off the wall rather than one placed on it.
-    if (s.kind === 'rock') p.y -= s.scale * 0.1
+    // Barely sunk at all now. A boulder bedded a fifth of its height into a
+    // SLOPE goes further in on the downhill side than the uphill one, and what
+    // survives above the surface is a cap: in town-reveal the half-buried ones
+    // came out as thin blue-grey plates with knife edges — paper, not stone. A
+    // boulder occasionally perched is a cheaper fault than a bank littered with
+    // shards.
+    if (s.kind === 'rock') p.y -= s.scale * 0.03
     else if (s.kind === 'scrub') p.y -= s.scale * 0.06
     const m = new THREE.Matrix4()
     m.compose(
@@ -1485,7 +1520,7 @@ function boulderGeometry(): THREE.BufferGeometry {
     // shoulder and what remained above the surface was a wedge; the whole
     // point of a boulder in this frame is that it is a ROUNDED mass among
     // straight-edged terrain.
-    q.y = q.y * 1.06 - 0.08
+    q.y = q.y * 1.02 - 0.02
     v.push(q)
   }
   for (let i = 0; i < v.length; i += 3) {
