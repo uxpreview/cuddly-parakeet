@@ -423,13 +423,20 @@ export function buildDog(pose: DogPose = DOG_LOOK_BACK, occlusion = 0): THREE.Gr
   // Red-audit whitelist entry 1 of 2. It wraps the NECK, behind the jaw.
   // Wide and shallow, so its silhouette is a ring from any angle. A deep,
   // narrow torus reads as a red tab hanging off the front of the throat.
-  const collarGeom = new THREE.TorusGeometry(0.076, 0.018, 6, 16)
-  collarGeom.scale(1, 1, 0.7)
-  collarGeom.rotateX(Math.PI / 2 - 0.78)
+  // A BAND, not a torus. A torus of tube radius 0.018 presents a thin bright
+  // curve to the camera and, seen at an angle, its near and far limbs merge:
+  // it rendered as a diagonal red slash down one side of the neck with
+  // stair-stepped edges, which is a red mark ON the dog rather than a collar
+  // AROUND him. A sleeve — an open cylinder sharing the neck's axis, with real
+  // width along it — has a silhouette that is a band from every angle including
+  // from behind, which is the angle the game shows most, because he is ahead.
+  const collarGeom = new THREE.CylinderGeometry(0.087, 0.091, 0.052, 14, 1, true)
+  collarGeom.rotateX(0.78) // shares the neck capsule's tilt
   // Down at the base of the neck, clear of the skull. Sitting level with the
   // jaw it read as a red sticker on his cheek — a bandage or a luggage tag —
   // which is a bad thing for the most load-bearing shape in the game to be.
-  collarGeom.translate(0, NECK_Y - 0.035, NECK_Z - 0.012)
+  const COLLAR_AT: [number, number, number] = [0, NECK_Y - 0.03, NECK_Z - 0.005]
+  collarGeom.translate(COLLAR_AT[0], COLLAR_AT[1], COLLAR_AT[2])
   const collarMat = makeRamp({
     color: DOG.collar.hex,
     shadowKey: DOG.collar.hex,
@@ -442,6 +449,13 @@ export function buildDog(pose: DogPose = DOG_LOOK_BACK, occlusion = 0): THREE.Gr
     shadeDrop: 0.94,
     flatten: 0.82,
     occlusion: 0,
+    // See RampMaterial: the band never projects smaller than this. Two and a
+    // half pixels of radius is five pixels across, which is the smallest thing
+    // that survives the sampler as a coloured mark rather than as a tint on one
+    // grey pixel. It costs nothing up close, where the factor is exactly 1.
+    minScreenRadiusPx: 2.5,
+    minScreenCenter: COLLAR_AT,
+    side: THREE.DoubleSide,
   })
   collarMat.name = DOG.collar.id
 

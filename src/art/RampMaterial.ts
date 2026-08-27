@@ -49,6 +49,13 @@ const VERT = /* glsl */ `
 varying vec3 vWorldNormal;
 varying vec3 vWorldPos;
 
+#ifdef USE_MIN_SCREEN
+  uniform vec3 uMinScreenCenter;
+  uniform float uMinScreenPx;
+  /** Radians of vertical FOV per pixel: 2*tan(fov/2) / viewportHeight. */
+  uniform float uPixelAngle;
+#endif
+
 #ifdef USE_SHADOW_ATTR
   attribute float aShadow;
   varying float vShadow;
@@ -85,6 +92,29 @@ void main() {
   vWorldPos = wp.xyz;
   vWorldNormal = normalize(mat3(modelMatrix) * objNormal);
 
+  #ifdef USE_MIN_SCREEN
+    // A screen-space floor on how small this object is allowed to get.
+    //
+    // Only the collar uses it, and the collar is the reason the red rule
+    // exists: "in every frame that contains the dog, the eye goes to the collar
+    // first, involuntarily." A band 3.5 cm wide on a dog 60 cm tall is four to
+    // nine pixels at the distances Chapter 1 actually stages him at, and four
+    // pixels of anything does not catch an eye involuntarily — measured across
+    // the render set the only way to locate him in a wide shot was to scan for
+    // red numerically. Modelling the band wider does not fix that; it makes him
+    // a dog in a scarf up close and is still four pixels far away.
+    //
+    // So the band holds a minimum radius in pixels and grows only when it is
+    // below it. Close up the factor is exactly 1 and the geometry is untouched.
+    vec3 ctr = (modelMatrix * vec4(uMinScreenCenter, 1.0)).xyz;
+    float d = length(ctr - cameraPosition);
+    float need = uMinScreenPx * d * uPixelAngle;
+    vec3 rad = wp.xyz - ctr;
+    float rl = length(rad);
+    if (rl > 1e-5) wp.xyz = ctr + rad * max(1.0, need / rl);
+    vWorldPos = wp.xyz;
+  #endif
+
   gl_Position = projectionMatrix * viewMatrix * wp;
 }
 `
@@ -120,6 +150,8 @@ varying vec3 vWorldPos;
 uniform float uOcclusion;
 uniform float uShadeDrop;
 uniform float uFlatten;
+uniform float uRampLo;
+uniform float uRampHi;
 
 ${SKY_GLSL}
 
@@ -192,8 +224,18 @@ void main() {
   // its chroma sat 30-65% low — the ramp was parking most surfaces part-way
   // between two colours, and part-way between two colours is always duller
   // than either. This is flat shading; the ramp is the seam, not the field.
+  //
+  // And the WIDTH of that band is per material, because terrain and a boy are
+  // not the same problem. A canyon wall is a gently curving loft: with the band
+  // 0.38 wide in n·l the terminator took metres of wall to cross, so the near
+  // cliff rendered as a soft orange-to-grey airbrush with the facets buried
+  // under it — the exact opposite of "flat shading exposes bad forms". On
+  // terrain the band is nearly closed and the facets carry the form. On a boy's
+  // head and a dog's barrel — a hand-sized curve out of a dozen polygons — a
+  // closed band cuts a hard line across the curve and turns the crown into a
+  // hat brim and the flank into a saddle patch, so those keep a soft one.
   float l = dot(n, uSunDir);
-  float t = smoothstep(-0.28, 0.1, l);
+  float t = smoothstep(uRampLo, uRampHi, l);
 
   // baked terrain shadow: a surface the sun cannot see falls to its shade value
   // however it happens to be turned
@@ -202,6 +244,20 @@ void main() {
   #else
     float occ = uOcclusion;
   #endif
+  // A cast shadow only means anything on a surface the sun could otherwise
+  // reach. On a face turned away from the sun the ray march is GRAZING — it
+  // skims along the surface it started on, over a heightfield of two-metre
+  // cells — and what it returns there is not a shadow, it is noise. Under
+  // per-face flat shading that noise stopped averaging out and became a mosaic
+  // of tan and grey blocks over the whole near cliff, which read as camouflage
+  // rather than as rock. Weighting the baked term by how much the face is
+  // turned toward the sun costs nothing where shadows matter — the canyon
+  // floor faces straight up — and deletes the noise where they never did.
+  occ *= smoothstep(0.0, 0.3, l);
+  // No sharpening here any more. The baked value is now flat per face and box
+  // filtered over that face's footprint, so the edge is already as crisp as the
+  // mesh allows; compressing it again only re-binarises the filter's work and
+  // brings back the chessboard.
   // A terrain shadow takes a surface most of the way to its shade value, not
   // all the way: the canyon floor in shadow is still limestone dust lit by a
   // whole sky, and crushing it to the shade colour is how a morning turns into
@@ -215,12 +271,22 @@ void main() {
   // walls and in the narrows, and it is the only thing in a chapter this
   // high-key that reaches the bottom of the value range.
   #ifdef USE_OCC_ATTR
-    // Reaches further down than is comfortable on purpose. Measured across the
-    // whole set, minimum luminance was 59 and the first percentile 86-139: the
-    // pictures had no anchor value anywhere and read as fog rather than as a
-    // canyon. The deep places — the wall feet, the narrows, the undersides —
-    // are the only ones that can supply one in a chapter this high-key.
-    col *= mix(0.6, 1.0, smoothstep(0.1, 0.62, vAo));
+    // Reaches far DOWN and not far OUT. It still bottoms out at 0.6, because
+    // measured across the whole set the pictures had no anchor value anywhere
+    // and read as fog rather than as a canyon, and the deep places — the wall
+    // feet, the narrows, the undersides — are the only ones that can supply one
+    // in a chapter this high-key.
+    //
+    // But its FOOTPRINT was far too wide. With the upper stop out at 0.62 a
+    // surface only two thirds open to the sky was still being darkened, which
+    // is most of a canyon floor: sampled at the identical screen position in
+    // every desktop frame, the same ground material with the same light spanned
+    // seventy-one levels, and the nearest foreground of the ford shot sat fifty
+    // levels below the documented #EFE3C8 with no shadow edge anywhere to
+    // explain it. That is not contact darkening, it is a wash, and it is what
+    // lifted the canyon floor up to meet the dog's coat. Contact darkening
+    // belongs where the ground actually closes in.
+    col *= mix(0.6, 1.0, smoothstep(0.04, 0.34, vAo));
   #endif
 
   // --- fog is the sky ------------------------------------------------------
@@ -294,6 +360,12 @@ export interface RampOptions {
   occlusion?: number
   /** How far the shade side drops in value before any hue shift. */
   shadeDrop?: number
+  /**
+   * The lit/shade transition band, in n·sun. Narrow for terrain and props, so
+   * the facets do the work; wider for characters, whose curves are only a
+   * dozen polygons and shatter into plates under a hard terminator.
+   */
+  ramp?: [number, number]
   /** Pull the result back toward the unlit base colour. 1 = ignores the light. */
   flatten?: number
   vertexColors?: boolean
@@ -301,6 +373,13 @@ export interface RampOptions {
   opacity?: number
   depthWrite?: boolean
   side?: THREE.Side
+  /**
+   * Never let this object's projected radius fall below this many pixels.
+   * The collar, and nothing else.
+   */
+  minScreenRadiusPx?: number
+  /** Object-space center the minimum radius is measured from. */
+  minScreenCenter?: [number, number, number]
   /** Height in meters below which the world gathers valley haze. */
   hazeFloor?: number
   /** How many meters the haze fades out over, above hazeFloor. */
@@ -332,6 +411,7 @@ export function makeRamp(opts: RampOptions = {}): THREE.ShaderMaterial {
     defines: {
       ...(opts.shadowAttribute ? { USE_SHADOW_ATTR: '' } : {}),
       ...(opts.occlusionAttribute ? { USE_OCC_ATTR: '' } : {}),
+      ...(opts.minScreenRadiusPx ? { USE_MIN_SCREEN: '' } : {}),
     },
     uniforms: {
       uBase: { value: lin(opts.color ?? '#FFFFFF') },
@@ -348,6 +428,15 @@ export function makeRamp(opts: RampOptions = {}): THREE.ShaderMaterial {
       uOcclusion: { value: opts.occlusion ?? 0 },
       uShadeDrop: { value: opts.shadeDrop ?? 0.86 },
       uFlatten: { value: opts.flatten ?? 0 },
+      uRampLo: { value: opts.ramp?.[0] ?? -0.28 },
+      uRampHi: { value: opts.ramp?.[1] ?? 0.1 },
+      uMinScreenCenter: {
+        value: new THREE.Vector3(...(opts.minScreenCenter ?? [0, 0, 0])),
+      },
+      uMinScreenPx: { value: opts.minScreenRadiusPx ?? 0 },
+      // Replaced every frame from the live camera; this is a 55-degree vertical
+      // field over a 900 px viewport, which is the desktop shot.
+      uPixelAngle: { value: (2 * Math.tan((55 * Math.PI) / 180 / 2)) / 900 },
     },
   })
   // the audit reads this to know which asset a material's color belongs to
@@ -381,6 +470,18 @@ export function setSunDirection(azimuthDeg: number, elevationDeg: number) {
     Math.cos(e) * Math.sin(a),
   ).normalize()
   for (const m of registry) m.uniforms.uSunDir?.value.copy(v)
+}
+
+/**
+ * Tell the minimum-screen-size materials how big a pixel is. Called once per
+ * frame with the live camera, because the collar's floor is in pixels and a
+ * portrait phone and a desktop window do not agree on what a pixel subtends.
+ */
+export function setPixelAngle(fovDeg: number, viewportHeightPx: number) {
+  const a = (2 * Math.tan((fovDeg * Math.PI) / 180 / 2)) / Math.max(viewportHeightPx, 1)
+  for (const m of registry) {
+    if (m.uniforms.uPixelAngle) m.uniforms.uPixelAngle.value = a
+  }
 }
 
 export function setFog(near: number, far: number) {

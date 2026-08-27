@@ -18,7 +18,15 @@ import { fileURLToPath } from 'node:url'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const BASE = process.env.BASE ?? 'http://localhost:5174'
+const SHOTS = ['hero', 'vista', 'dog-read', 'ford', 'prints', 'town-reveal']
 const SHOT = process.argv[2] ?? 'hero'
+// This renders a shot live; it does not read a PNG. Passing it a file path used
+// to fall through to the default shot and report numbers for the wrong frame,
+// which is exactly the kind of "measured" number that is worse than no number.
+if (!SHOTS.includes(SHOT)) {
+  console.error(`unknown shot ${JSON.stringify(SHOT)}; expected one of ${SHOTS.join(', ')}`)
+  process.exit(2)
+}
 
 const paletteSrc = readFileSync(join(ROOT, 'src/art/palette.ts'), 'utf8')
 const PALETTE = [...paletteSrc.matchAll(/c\('([^']+)',\s*'(#[0-9A-Fa-f]{6})'\)/g)].map((m) => ({

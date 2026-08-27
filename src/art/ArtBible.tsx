@@ -6,6 +6,7 @@ import { world, sampleGround } from '../game/world'
 import { buildArtTerrain } from './artTerrain'
 import { buildBoy, buildDog, BOY_WALK, DOG_LOOK_BACK } from './characters'
 import { makeBlobShadow, makePrintTrail } from './decals'
+import { setPixelAngle } from './RampMaterial'
 import { CH1_LIGHT } from './palette'
 import { Grain } from './Grain'
 import { Sky } from './Sky'
@@ -53,6 +54,13 @@ function Scene({ shot, onShots }: { shot: string; onShots: (s: Shot[]) => void }
         return g ? { y: g.y } : null
       },
       samples,
+      // Stage the subjects in the light. See shots.ts: two thirds of this floor
+      // is lit and the dog was standing in the other third in every shot.
+      (x, y, z) => terrain.sunOcclusionAt(x, y, z),
+      // The rim and the ford are named places: the reveal camera is the
+      // manifest's own, and a ford shot staged thirty metres downstream of the
+      // ford is a picture of a river. Only the open canyon staging roams.
+      shot === 'town-reveal' || shot === 'ford' ? 7 : 40,
     )
     const shots = buildShots(
       world.art,
@@ -63,6 +71,7 @@ function Scene({ shot, onShots }: { shot: string; onShots: (s: Shot[]) => void }
           return g === null ? null : { y: g }
         },
         STAGE_SAMPLES,
+        (x, y, z) => terrain.sunOcclusionAt(x, y, z),
       ),
       world.manifest.cameras,
     )
@@ -137,6 +146,9 @@ function Scene({ shot, onShots }: { shot: string; onShots: (s: Shot[]) => void }
     cam.far = 1400
     cam.updateProjectionMatrix()
     cam.lookAt(new THREE.Vector3(...s.lookAt))
+    // The collar's minimum size is stated in pixels, so it has to know how big
+    // a pixel is. A portrait phone and a desktop window do not agree.
+    setPixelAngle(cam.fov, gl.domElement.height / (gl.getPixelRatio() || 1))
     // headless screenshot harness reads this
     ;(window as unknown as Record<string, unknown>).__artShot = s
     ;(window as unknown as Record<string, unknown>).__gl = gl
@@ -160,6 +172,15 @@ export function ArtBible() {
   const params = new URLSearchParams(location.search)
   const shot = params.get('shot') ?? 'hero'
   const bare = params.has('bare')
+
+  // Dev-only key-light override, so the sun angle can be MEASURED rather than
+  // argued about: the baked occlusion is built at load, so it cannot be tuned
+  // from a uniform. `?sunAz=&sunEl=` rebuilds the chapter at that key light.
+  const az = params.get('sunAz')
+  const el = params.get('sunEl')
+  if (az || el) {
+    CH1_LIGHT.sunDir = [az ? Number(az) : CH1_LIGHT.sunDir[0], el ? Number(el) : CH1_LIGHT.sunDir[1]]
+  }
 
   useEffect(() => {
     loadChapter(CHAPTER)

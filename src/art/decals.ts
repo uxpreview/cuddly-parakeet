@@ -177,17 +177,27 @@ export function dogPrintTexture(): THREE.Texture {
   if (dogTex) return dogTex
   dogTex = printCanvas((ctx, S) => {
     const c = S / 2
-    // heel pad, a soft triangle-ish oval
-    oval(ctx, c, c + S * 0.13, S * 0.15, S * 0.12)
-    // four toes, splayed forward
+    // Heel pad, big. Ink COVERAGE is the whole game here: a decal is minified
+    // the moment it is more than a couple of metres away, and a minified decal
+    // does not get fainter in the sense of losing its edges — the sampler
+    // averages the entire stamp down toward its mean alpha. Four small toes and
+    // a small pad drawn on a mostly empty canvas average to about eight percent,
+    // which is why the trail measured two to eight percent contrast and one
+    // print measured exactly zero against the ground it sat on. The anatomy
+    // wants a light little print. The sampler charges for empty space, so the
+    // pads are drawn heavy and close.
+    oval(ctx, c, c + S * 0.17, S * 0.215, S * 0.175)
+    // four toes in a forward arc, overlapping the pad rather than floating off
+    // it — a paw, readable as one connected shape at the size it is actually
+    // seen, not four dots and a blob
     const toes: [number, number, number][] = [
-      [-0.19, -0.1, -0.5],
-      [-0.07, -0.2, -0.18],
-      [0.07, -0.2, 0.18],
-      [0.19, -0.1, 0.5],
+      [-0.215, -0.045, -0.42],
+      [-0.078, -0.155, -0.15],
+      [0.078, -0.155, 0.15],
+      [0.215, -0.045, 0.42],
     ]
     for (const [dx, dy, rot] of toes) {
-      oval(ctx, c + dx * S, c + dy * S, S * 0.068, S * 0.088, rot)
+      oval(ctx, c + dx * S, c + dy * S, S * 0.098, S * 0.125, rot)
     }
   })
   return dogTex
@@ -198,12 +208,12 @@ export function boyPrintTexture(): THREE.Texture {
   boyTex = printCanvas((ctx, S) => {
     const c = S / 2
     // ball of the foot
-    oval(ctx, c, c - S * 0.11, S * 0.16, S * 0.2)
+    oval(ctx, c, c - S * 0.115, S * 0.205, S * 0.245)
     // heel
-    oval(ctx, c, c + S * 0.21, S * 0.125, S * 0.12)
+    oval(ctx, c, c + S * 0.235, S * 0.16, S * 0.155)
     // the waist between them, faint: a walking print rarely lands whole
     ctx.globalAlpha = 0.55
-    oval(ctx, c, c + S * 0.06, S * 0.085, S * 0.085)
+    oval(ctx, c, c + S * 0.07, S * 0.11, S * 0.105)
     ctx.globalAlpha = 1
   })
   return boyTex
@@ -222,9 +232,29 @@ const PRINT_FRAG = /* glsl */ `
 uniform sampler2D uMap;
 uniform vec3 uColor;
 uniform float uStrength;
+uniform float uTexSize;
+uniform float uMinBoost;
 varying vec2 vUv;
 void main() {
-  float a = texture2D(uMap, vUv).a * uStrength;
+  float a = texture2D(uMap, vUv).a;
+
+  // A print six metres away covers a handful of pixels, and the sampler averages
+  // the whole stamp toward its mean alpha — so a decal authored to sit at a
+  // readable darkness up close arrives at the middle distance as a smudge four
+  // percent off the ground value. Measured, the trail stopped being followable
+  // at about three metres, and the trail is half the navigation system: there is
+  // no wayfinding UI to fall back on.
+  //
+  // So the strength is compensated for minification. How many texels fall inside
+  // one screen pixel tells us how much averaging the sampler has already done,
+  // and the ink is deepened by the same order. Capped, because a print at forty
+  // metres becoming a black dot is its own failure — this is meant to hold the
+  // print at the value it was authored at, not to make distance louder.
+  vec2 duv = vec2(length(vec2(dFdx(vUv.x), dFdy(vUv.x))), length(vec2(dFdx(vUv.y), dFdy(vUv.y))));
+  float mip = clamp(log2(max(max(duv.x, duv.y) * uTexSize, 1.0)), 0.0, 5.0);
+  float k = clamp(uStrength * (1.0 + mip * uMinBoost), 0.0, 0.92);
+
+  a *= k;
   if (a <= 0.004) discard;
   gl_FragColor = vec4(mix(vec3(1.0), uColor, a), 1.0);
 }
@@ -248,8 +278,8 @@ export function makePrintTrail(
   // than this is averaged away by the sampler entirely — measured, the trail
   // simply stopped existing past the near field — and the trail is half the
   // navigation system.
-  const size = kind === 'dog' ? 0.215 : 0.24
-  const geom = new THREE.PlaneGeometry(size * (kind === 'dog' ? 0.95 : 0.62), size)
+  const size = kind === 'dog' ? 0.2 : 0.235
+  const geom = new THREE.PlaneGeometry(size * (kind === 'dog' ? 0.95 : 0.66), size)
   geom.rotateX(-Math.PI / 2)
 
   const mat = new THREE.ShaderMaterial({
@@ -258,7 +288,9 @@ export function makePrintTrail(
     uniforms: {
       uMap: { value: kind === 'dog' ? dogPrintTexture() : boyPrintTexture() },
       uColor: { value: srgbTint(CH1.limestoneShadow.hex) },
-      uStrength: { value: kind === 'dog' ? 0.6 : 0.4 },
+      uStrength: { value: kind === 'dog' ? 0.72 : 0.44 },
+      uTexSize: { value: 128 },
+      uMinBoost: { value: kind === 'dog' ? 0.42 : 0.3 },
     },
   })
   mat.name = 'print:' + kind

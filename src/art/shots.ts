@@ -53,6 +53,8 @@ export const RIM_STAGE = { boy: 319, dog: 330, trailFrom: 306 }
 export const FORD_STAGE = { boy: 97, dog: 106, trailFrom: 88 }
 
 type Ground = (x: number, z: number, fromY: number) => { y: number } | null
+/** 0 = in full sun, 1 = fully inside a terrain shadow. */
+type SunOcc = (x: number, y: number, z: number) => number
 
 function sampleAt(art: ArtTerrain, i: number) {
   const c = art.centerline[Math.max(0, Math.min(art.centerline.length - 1, Math.round(i)))]
@@ -67,17 +69,89 @@ function offset(art: ArtTerrain, i: number, lateral: number, ground: Ground) {
   return new THREE.Vector3(x, g ? g.y : s.y, z)
 }
 
+/**
+ * Nudge an actor to the nearest spot the key light actually reaches.
+ *
+ * The canyon floor is about two thirds lit at this chapter's morning sun —
+ * measured, not assumed — and the other third is the long shadow bands the
+ * palette section wants. Standing the SUBJECT in one of them is a staging
+ * accident, and it was not a small one: the dog measured fully occluded in all
+ * six shots, so his coat rendered its shade value everywhere and never once
+ * rendered the documented #E5D5BC. That read as a palette failure and as the
+ * dog being invisible against the ground, and it was neither. It was where he
+ * was put.
+ *
+ * The search is deliberately short and prefers standing still: a couple of
+ * metres along the route and a small lateral shift, nearest first. If nothing
+ * within reach is lit, the original staging stands rather than the actor being
+ * teleported somewhere the shot was not composed for.
+ */
+function stageInLight(
+  art: ArtTerrain,
+  i: number,
+  lat: number,
+  ground: Ground,
+  sun: SunOcc | undefined,
+  eyeHeight: number,
+  span: number,
+): { at: THREE.Vector3; i: number; lat: number } {
+  const at = offset(art, i, lat, ground)
+  if (!sun) return { at, i, lat }
+  let best = { at, i, lat, occ: sun(at.x, at.y + eyeHeight, at.z) }
+  if (best.occ <= 0.01) return best
+
+  // Nearest first, so the actor moves as little as the light allows.
+  const order: number[] = [0]
+  for (let d = 1; d <= span; d++) order.push(d, -d)
+  for (const di of order) {
+    for (const dl of [0, 0.45, -0.45, 0.9, -0.9, 1.35, -1.35]) {
+      const ii = i + di
+      const ll = lat + dl
+      const p = offset(art, ii, ll, ground)
+      // Never climb. Without this the search treats the canyon WALL as a
+      // splendid sunlit spot and puts the dog fourteen metres up it, out of the
+      // shot the camera was composed for. He walks a route on the floor; the
+      // only staging freedom here is along it.
+      if (Math.abs(p.y - at.y) > 1.2) continue
+      const occ = sun(p.x, p.y + eyeHeight, p.z)
+      if (occ < best.occ) best = { at: p, i: ii, lat: ll, occ }
+      // Only FULL sun ends the search. Stopping at the penumbra is what left the
+      // dog a third occluded in every canyon shot: a third occluded still costs
+      // his coat thirty percent of the distance to its shade value, and the
+      // documented #E5D5BC then never renders anywhere in the bible.
+      if (best.occ <= 0.01) return best
+    }
+  }
+  return best
+}
+
 export function buildStage(
   art: ArtTerrain,
   ground: Ground,
   samples: { boy: number; dog: number; trailFrom: number } = STAGE_SAMPLES,
+  sun?: SunOcc,
+  /**
+   * How far along the route an actor may be moved to find light, in samples.
+   * Generous in the canyon, where the camera is composed around wherever they
+   * end up; tight on the rim, where the town-reveal camera is the manifest's
+   * own and the actors have to stay inside its frame.
+   */
+  span = 34,
 ): Stage {
-  const { boy: bi, dog: di, trailFrom } = samples
-  const boyLat = -0.55
-  const dogLat = 0.85
+  const { boy: bi0, dog: di0, trailFrom } = samples
+  const boyLat0 = -0.55
+  const dogLat0 = 0.85
 
-  const boyAt = offset(art, bi, boyLat, ground)
-  const dogAt = offset(art, di, dogLat, ground)
+  // The dog first: he is the subject, so he gets the pick of the light.
+  const dogSpot = stageInLight(art, di0, dogLat0, ground, sun, 0.4, span)
+  const boySpot = stageInLight(art, bi0, boyLat0, ground, sun, 0.9, span)
+  const di = dogSpot.i
+  const bi = boySpot.i
+  const boyLat = boySpot.lat
+  const dogLat = dogSpot.lat
+
+  const boyAt = boySpot.at
+  const dogAt = dogSpot.at
   const boyHeading = Math.atan2(dogAt.x - boyAt.x, dogAt.z - boyAt.z)
   // he has stopped and turned his head back up the path; the body still points
   // the way he was going
