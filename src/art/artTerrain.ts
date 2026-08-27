@@ -956,7 +956,9 @@ function boulderGeometry(): THREE.BufferGeometry {
     q.x = Math.round(q.x * 2.6 + h1(q.z * 37) * 0.6) / 2.6
     q.y = Math.round(q.y * 2.2 + h1(q.x * 53) * 0.6) / 2.2
     q.z = Math.round(q.z * 2.4 + h1(q.y * 41) * 0.6) / 2.4
-    q.y = q.y * 0.86 - 0.26
+    // less flattened: from a raised camera a squat boulder's top face is a
+    // large flat plate, which is what the town reveal looks straight down on
+    q.y = q.y * 1.05 - 0.34
     v.push(q)
   }
   for (let i = 0; i < v.length; i += 3) {
@@ -973,24 +975,53 @@ function boulderGeometry(): THREE.BufferGeometry {
   return mb.geometry()
 }
 
-/** Low canyon scrub: a couple of squashed domes. No flowers in chapter 1. */
+/**
+ * Low canyon scrub: a cluster of squat domes. Built as cones with a flat
+ * underside they read as green shards from any raised camera, and the town
+ * reveal looks down on all of them.
+ */
 function scrubGeometry(): THREE.BufferGeometry {
   const mb = new MeshBuilder()
-  for (const [ox, oz, r, hh] of [
-    [0, 0, 0.75, 0.5],
-    [0.55, 0.3, 0.5, 0.34],
-    [-0.4, 0.45, 0.42, 0.28],
+  for (const [ox, oz, r, hh, seed] of [
+    [0, 0, 0.62, 0.46, 3],
+    [0.5, 0.26, 0.44, 0.34, 11],
+    [-0.36, 0.4, 0.38, 0.29, 19],
   ]) {
-    const N = 6
-    const rim: THREE.Vector3[] = []
-    for (let i = 0; i < N; i++) {
-      const a = (i / N) * Math.PI * 2
-      const rr = r * (0.8 + h1(i * 5.1 + ox * 13) * 0.4)
-      rim.push(new THREE.Vector3(ox + Math.cos(a) * rr, 0, oz + Math.sin(a) * rr))
+    const RINGS = 2
+    const SEG = 6
+    const rows: THREE.Vector3[][] = []
+    for (let ri = 0; ri <= RINGS; ri++) {
+      const v = ri / RINGS
+      const rr = Math.sin((v * Math.PI) / 2 + 0.25)
+      const row: THREE.Vector3[] = []
+      for (let i = 0; i < SEG; i++) {
+        const a = (i / SEG) * Math.PI * 2
+        const wob = 0.78 + h1(i * 5.1 + ri * 7.3 + seed) * 0.44
+        row.push(
+          new THREE.Vector3(
+            ox + Math.cos(a) * rr * r * wob,
+            hh * Math.cos((v * Math.PI) / 2) * (0.8 + h1(i * 2.7 + seed) * 0.4),
+            oz + Math.sin(a) * rr * r * wob,
+          ),
+        )
+      }
+      rows.push(row)
     }
     const apex = new THREE.Vector3(ox, hh, oz)
-    for (let i = 0; i < N; i++) {
-      mb.tri(apex, rim[i], rim[(i + 1) % N], CH1.scrub.hex, SHADOW_MIX.foliage, 0.96 + h1(i) * 0.08)
+    for (let i = 0; i < SEG; i++) {
+      const j = (i + 1) % SEG
+      mb.tri(apex, rows[0][i], rows[0][j], CH1.scrub.hex, SHADOW_MIX.foliage, 1.02)
+      for (let ri = 0; ri < RINGS; ri++) {
+        mb.quad(
+          rows[ri][i],
+          rows[ri + 1][i],
+          rows[ri + 1][j],
+          rows[ri][j],
+          CH1.scrub.hex,
+          SHADOW_MIX.foliage,
+          0.94 + h1(i * 3 + ri + seed) * 0.1,
+        )
+      }
     }
   }
   return mb.geometry()
