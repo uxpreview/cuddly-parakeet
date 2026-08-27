@@ -815,12 +815,16 @@ function pineGeometry(variant: number): THREE.BufferGeometry {
     }
     return pts
   }
-  const steps = 4
+  // A root flare at the base and a real taper up the bole. Without them the
+  // trunk is a stick pushed into the ground and the tree reads as a thumbtack
+  // in close-up, however well the massed ridge line works.
+  const taper = (t: number) => (t < 0.14 ? 1.55 - t * 3.2 : 1.1 - t * 0.42)
+  const steps = 5
   for (let st = 0; st < steps; st++) {
     const t0 = st / steps
     const t1 = (st + 1) / steps
-    const a = ring(t0, r0 * (1 - t0 * 0.35))
-    const b = ring(t1, r0 * (1 - t1 * 0.35))
+    const a = ring(t0, r0 * taper(t0))
+    const b = ring(t1, r0 * taper(t1))
     for (let i = 0; i < SIDES; i++) {
       const j = (i + 1) % SIDES
       mb.quad(a[i], b[i], b[j], a[j], trunkHex, SHADOW_MIX.ground, 0.96 + h1(st * 3 + i) * 0.08)
