@@ -68,9 +68,15 @@ const SURFACE: Record<string, { hex: string; shadow: number; grain?: number }> =
   path: { hex: CH1.path.hex, shadow: SHADOW_MIX.ground, grain: 0.04 },
   gravel: { hex: CH1.path.hex, shadow: SHADOW_MIX.ground, grain: 0.045 },
   dust: { hex: CH1.path.hex, shadow: SHADOW_MIX.ground, grain: 0.038 },
-  sand: { hex: CH1.sand.hex, shadow: SHADOW_MIX.ground, grain: 0.035 },
+  // Scree and sand are not their own colours. art-direction.md gives Chapter 1
+  // five ground-and-stone hexes and no more; a talus slope is broken limestone
+  // and a sand bar is the same pale gravel the path is. Inventing a value for
+  // each of them is how a documented palette quietly becomes a suggestion — and
+  // between them they were occupying more of the frame than the two hexes the
+  // document actually names.
+  sand: { hex: CH1.path.hex, shadow: SHADOW_MIX.ground, grain: 0.035 },
   wetstone: { hex: CH1.wetStone.hex, shadow: SHADOW_MIX.ground, grain: 0.03 },
-  scree: { hex: CH1.scree.hex, shadow: 0.85, grain: 0.055 },
+  scree: { hex: CH1.limestone.hex, shadow: SHADOW_MIX.limestone, grain: 0.055 },
   limestone: { hex: CH1.limestone.hex, shadow: SHADOW_MIX.limestone, grain: 0.042 },
   rock: { hex: CH1.limestone.hex, shadow: SHADOW_MIX.limestone, grain: 0.028 },
   scrub: { hex: CH1.scrub.hex, shadow: SHADOW_MIX.foliage, grain: 0.03 },
@@ -678,8 +684,8 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
       pt(w / 2, -d / 2, 0),
       pt(w / 2, d / 2, 0),
       pt(-w / 2, d / 2, 0),
-      CH1.scree.hex,
-      0.85,
+      CH1.limestone.hex,
+      SHADOW_MIX.limestone,
       0.98 + h1(t.at[0]) * 0.05,
     )
     // riser, facing back up the hill: the terrace edge is what reads at distance

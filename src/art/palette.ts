@@ -39,8 +39,6 @@ export const CH1 = {
 
   // [DERIVED] Values art-direction.md does not name. Each is a documented
   // palette hex moved along one axis only, so nothing new enters the chapter.
-  /** Sand at the swimming hole: `path` warmed a step toward limestone. */
-  sand: c('ch1.sand', '#EBD9B6'),
   /** Wet stone in the ford and under the fallen pine. */
   wetStone: c('ch1.wetstone', '#B9AE96'),
   /** The fallen pine's dead trunk: pine drained of green, not a new hue. */
@@ -49,8 +47,6 @@ export const CH1 = {
   riverShallow: c('ch1.river.shallow', '#7BAA9A'),
   /** Deep channel under the log crossing: `river` dropped in value. */
   riverDeep: c('ch1.river.deep', '#3B6E68'),
-  /** Scree and talus at the wall feet. */
-  scree: c('ch1.scree', '#CDB593'),
   /** Sparse canyon scrub. Chapter 1 has no flowers. */
   scrub: c('ch1.scrub', '#7E8A63'),
   /** The town below the rim, seen through haze: limestone gone cool and pale. */
