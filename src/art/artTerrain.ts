@@ -321,6 +321,13 @@ export interface ArtScene {
   /** 0 = in full sun, 1 = fully in a terrain shadow, at any world point. */
   sunOcclusionAt: (x: number, y: number, z: number) => number
   /**
+   * How much open sky a point sees: 1 in the open, low where the ground closes
+   * in. This is the term the shader darkens ground with, so it is the other
+   * half of "is this a lit place to stand" — a spot in full sun at the foot of
+   * a wall still renders dark.
+   */
+  skyViewAt: (x: number, y: number, z: number) => number
+  /**
    * Ground height of the ART surface at a point, or null where there is none.
    * Characters and prints stand on this, not on the grey box: the two agree
    * almost everywhere, and where they deliberately do not — the ford bed sits
@@ -832,16 +839,20 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
         // at about two metres lets the two materials interlock along a ragged
         // edge instead, which is what gravel giving way to stone looks like.
         //
-        // The amplitude is small on purpose. At half a rung the two materials
-        // stopped forming an edge at all and started alternating face by face:
-        // pale gravel and warm limestone are thirty levels and a hue apart, so
-        // a floor that picks between them per face is a chessboard, and at a
-        // seventh of a rung the interlocking zone was still two metres wide.
-        // A fourteenth breaks the line without breaking the field.
+        // The noise is LONG — about seven metres — and that is the whole trick.
+        //
+        // A rung pair narrow enough not to be subdivided has a midpoint of
+        // exactly 0.5, so any noise short enough to differ between neighbouring
+        // faces turns that decision into a coin flip per face: pale gravel and
+        // warm limestone are thirty levels and a hue apart, and the floor came
+        // out a chessboard of them. At seven metres neighbouring faces agree,
+        // so the boundary swings from one rung to the next in long stretches —
+        // an interlocking margin, which is what a gravel bar meeting a talus
+        // foot actually looks like, rather than either a ruled line or a tile.
         _mc.copy(A).add(B).add(Cc).add(D).multiplyScalar(0.25)
         const um =
           (u0 + u1) * 0.5 +
-          vnoise3(_mc.x * 0.62, _mc.y * 0.62, _mc.z * 0.62, 71) * 0.07
+          vnoise3(_mc.x * 0.14, _mc.y * 0.14, _mc.z * 0.14, 71) * 0.3
         const kMid = SURFACE[leg.chain[um < 0.5 ? k : k + 1].m] ?? SURFACE.limestone
         const s0 = kMid
         const s1 = kMid
@@ -1197,6 +1208,7 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
     hazeFloor: art.hazeFloor,
     materials,
     sunOcclusionAt: (x, y, z) => shadow.sample(x, y, z),
+    skyViewAt: (x, y, z) => shadow.skyViewCached(x, y, z),
     groundAt: (x, z) => {
       const h = shadow.heightAt(x, z)
       return h < -1e8 ? null : h

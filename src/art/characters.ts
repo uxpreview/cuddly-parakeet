@@ -192,10 +192,17 @@ export function buildBoy(pose: BoyPose = BOY_WALK, occlusion = 0): THREE.Group {
   // touch — a boy looking down the canyon for his dog.
   const headGroup: THREE.BufferGeometry[] = []
   headGroup.push(paint(sphere(0.185, 11, 8), skin, S))
-  // hair as a cap sitting on the skull, cut off above the eyes
-  const hair = sphere(0.194, 11, 6)
-  hair.scale(1, 0.86, 1)
-  headGroup.push(paint(place(hair, [0, 0.03, -0.012]), BOY.hair.hex, S))
+  // Hair as a true spherical CAP, at a uniform radius larger than the skull's.
+  //
+  // It used to be a whole sphere squashed to 0.86 in Y, which is smaller than
+  // the skull over most of the front of the head — so the skin punched through
+  // it along the brow, as two bare bands across the forehead at roughly
+  // (72,87)-(105,93) in `dog-read-desktop.png`, sampling #CE9F76. A cap of
+  // constant radius cannot intersect a smaller concentric sphere at all; the
+  // hairline is where the cap ENDS, and it is tipped back so it sits lower at
+  // the nape than at the brow.
+  const hair = new THREE.SphereGeometry(0.197, 12, 8, 0, Math.PI * 2, 0, 1.28)
+  headGroup.push(paint(place(hair, [0, 0.004, -0.004], [0.34, 0, 0]), BOY.hair.hex, S))
   for (const side of [1, -1]) {
     const e = sphere(0.042, 6, 4)
     e.scale(0.5, 1, 0.9)

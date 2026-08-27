@@ -69,6 +69,7 @@ function Scene({
       // manifest's own, and a ford shot staged thirty metres downstream of the
       // ford is a picture of a river. Only the open canyon staging roams.
       shot === 'town-reveal' || shot === 'ford' ? 7 : 40,
+      (x, y, z) => terrain.skyViewAt(x, y, z),
     )
     const shots = buildShots(
       world.art,
@@ -80,6 +81,8 @@ function Scene({
         },
         STAGE_SAMPLES,
         (x, y, z) => terrain.sunOcclusionAt(x, y, z),
+        34,
+        (x, y, z) => terrain.skyViewAt(x, y, z),
       ),
       world.manifest.cameras,
     )
