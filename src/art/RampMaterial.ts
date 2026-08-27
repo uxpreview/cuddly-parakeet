@@ -130,6 +130,10 @@ void main() {
   #endif
 
   vec3 n = normalize(vWorldNormal);
+  // Double-sided geometry seen from behind gets its normal flipped, so a
+  // headland or a terrace whose winding happens to face away does not render as
+  // a flat near-black slab with a straight top edge.
+  if (!gl_FrontFacing) n = -n;
   #ifdef USE_SHADOW_ATTR
     float shadowMix = vShadow;
   #else
