@@ -414,7 +414,10 @@ export function buildDog(pose: DogPose = DOG_LOOK_BACK, occlusion = 0): THREE.Gr
   // Red-audit whitelist entry 1 of 2. It wraps the NECK, behind the jaw.
   const collarGeom = new THREE.TorusGeometry(0.07, 0.026, 6, 14)
   collarGeom.rotateX(Math.PI / 2 - 0.78)
-  collarGeom.translate(0, NECK_Y + 0.008, NECK_Z + 0.012)
+  // Down at the base of the neck, clear of the skull. Sitting level with the
+  // jaw it read as a red sticker on his cheek — a bandage or a luggage tag —
+  // which is a bad thing for the most load-bearing shape in the game to be.
+  collarGeom.translate(0, NECK_Y - 0.035, NECK_Z - 0.012)
   const collarMat = makeRamp({
     color: DOG.collar.hex,
     shadowKey: DOG.collar.hex,

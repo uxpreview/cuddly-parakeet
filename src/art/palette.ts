@@ -142,7 +142,12 @@ export const SHADOW_MIX = {
   // times too desaturated. Foliage keeps nearly all of its own colour in shade.
   foliage: 0.12,
   water: 0.2,
-  character: 0.18,
+  // The dog's coat is #E5D5BC and the canyon gravel is #EFE3C8. He is four
+  // value points from the ground he trots over, so his own shading has to
+  // supply the separation his albedo cannot: a shade side that goes properly
+  // cool is what gives him a form to be seen as, and what lets the white points
+  // read as points rather than as more of the same pale.
+  character: 0.34,
   distant: 0.26,
 } as const
 

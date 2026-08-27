@@ -87,12 +87,14 @@ function Scene({ shot, onShots }: { shot: string; onShots: (s: Shot[]) => void }
     // The dog's is tighter and darker than the boy's on purpose: he is the
     // thing the player is looking for, on ground almost exactly his own value,
     // and the contact shadow is what stops him floating on it.
-    for (const [actor, foot, hgt, strength, occ, core] of [
-      [boy, 0.34, 1.15, 0.5, boyOcc, 0.45],
-      [dog, 0.26, 0.5, 0.68, dogOcc, 0.6],
+    for (const [actor, foot, hgt, strength, core] of [
+      [boy, 0.34, 1.15, 0.5, 0.45],
+      [dog, 0.26, 0.5, 0.68, 0.6],
     ] as const) {
-      // no cast shadow where there is no sun to cast it
-      if (occ > 0.8) continue
+      // A contact shadow always, even in terrain shadow. It is not only a cast
+      // shadow — it is what stops the character floating on the ground, and a
+      // dog whose coat is four value points from the sand he stands on has
+      // nothing else holding him to it.
       const blob = makeBlobShadow({
         footprint: foot,
         height: hgt,
