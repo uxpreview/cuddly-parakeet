@@ -1367,7 +1367,12 @@ function blob(
  */
 function boulderGeometry(): THREE.BufferGeometry {
   const mb = new MeshBuilder()
-  const base = new THREE.IcosahedronGeometry(1, 0)
+  // One subdivision, not none. A bare icosahedron quantised down to quarry
+  // faces presents two or three planes to any camera, and under a two-stop ramp
+  // two planes is two values: the boulders read as doorstops — a flat wedge of
+  // shadow-hex with one lit triangle on top. Eighty faces is still low-poly and
+  // it is enough for a lump to have a top, a shoulder and a side.
+  const base = new THREE.IcosahedronGeometry(1, 1)
   const p = base.attributes.position
   const v: THREE.Vector3[] = []
   for (let i = 0; i < p.count; i++) {
@@ -1376,7 +1381,13 @@ function boulderGeometry(): THREE.BufferGeometry {
     // of the ground with flat quarry faces instead of as a smooth pebble
     // Irregular in all three axes. Quantising only x and z left a straight
     // apex ridge and bilateral symmetry, which reads as a canvas tent.
-    const k = 0.78 + h1(Math.round(q.x * 97 + q.y * 31 + q.z * 13)) * 0.42
+    // Coherent lumps, not per-vertex spikes. The radius used to be a hash of
+    // the vertex's own coordinates, which is white noise: at eighty faces that
+    // came out as crumpled paper, every facet pointing somewhere different and
+    // the near-binary ramp turning that into a mosaic of tan and grey. A smooth
+    // 3-D noise across the sphere gives two or three broad lobes instead, and
+    // the facets on each lobe agree with their neighbours.
+    const k = 0.82 + (vnoise3(q.x * 1.6, q.y * 1.6, q.z * 1.6, 5) * 0.5 + 0.5) * 0.34
     q.multiplyScalar(k)
     // Quantised onto a coarse lattice so the lump comes out with quarry faces.
     // The lattice used to be coarse enough (steps of 1/2.2 on a unit sphere,
@@ -1385,9 +1396,11 @@ function boulderGeometry(): THREE.BufferGeometry {
     // was a flat kite with no side face, no thickness and one hard diagonal
     // fold across it. The tent read was replaced by a paper read. Finer steps
     // keep the faceting and stop the collapse.
-    q.x = Math.round(q.x * 3.6 + h1(q.z * 37) * 0.5) / 3.6
-    q.y = Math.round(q.y * 3.2 + h1(q.x * 53) * 0.5) / 3.2
-    q.z = Math.round(q.z * 3.4 + h1(q.y * 41) * 0.5) / 3.4
+    // A light quantisation only. With eighty faces the facets themselves are
+    // the quarry faces; a coarse lattice on top of them shreds the lobes.
+    q.x = Math.round(q.x * 7.5) / 7.5
+    q.y = Math.round(q.y * 6.6) / 6.6
+    q.z = Math.round(q.z * 7.1) / 7.1
     // A floor on the radius, so no vertex is pulled into the centre and no face
     // is left as a sliver.
     const rl = q.length()
@@ -1401,7 +1414,11 @@ function boulderGeometry(): THREE.BufferGeometry {
     // no side face and no thickness — and the banks came out littered with
     // triangular sheets of paper. Better to have one occasionally perched than
     // a field of plates.
-    q.y = q.y * 1.12 - 0.14
+    // Less sunk than before. At a third of its height the lump lost its
+    // shoulder and what remained above the surface was a wedge; the whole
+    // point of a boulder in this frame is that it is a ROUNDED mass among
+    // straight-edged terrain.
+    q.y = q.y * 1.06 - 0.08
     v.push(q)
   }
   for (let i = 0; i < v.length; i += 3) {
