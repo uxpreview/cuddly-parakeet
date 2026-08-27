@@ -139,13 +139,17 @@ void main() {
   #else
     float shadowMix = uShadowMix;
   #endif
-  // Hue first, then value. Dropping the value before the hue mix lands the
-  // shade on a warm-dark version of the material, which on limestone made both
-  // walls of the canyon read warm and the chapter stopped being cool at all.
-  // Sliding toward the documented shadow-side colour first, and dropping the
-  // value after, keeps the shade side genuinely cool while the material still
-  // keeps as much of its own identity as its mix allows.
-  vec3 shade = mix(base, uShadowKey, shadowMix) * uShadeDrop;
+  // Value drop first, hue slide second — so a material whose slide is 1.0
+  // lands on the documented shadow-side colour EXACTLY, and one whose slide is
+  // low is simply a darker version of itself.
+  //
+  // Limestone slides the whole way, and with the ramp narrowed that is right
+  // rather than ruinous: a surface is either turned toward the sun or it is
+  // not, so lit limestone renders #E3C08C exactly and shaded limestone renders
+  // #9DA9A2 exactly, which is the two-value system art-direction.md describes.
+  // The earlier attempt at a partial slide put both walls of the canyon in the
+  // same warm mush, because part-way between two colours is duller than either.
+  vec3 shade = mix(base * uShadeDrop, uShadowKey, shadowMix);
 
   // Skylight. In shade the key light contributes nothing, so without this every
   // face of a cliff renders the same value and a wall in shadow has no form at
@@ -181,11 +185,15 @@ void main() {
   // and every stone surface in the chapter landed on the shadow hex instead.
   // A palette measured that way passes by deleting half of itself.
   //
-  // So the stop sits at 0.26: anything meaningfully turned toward the sun
-  // renders its palette hex exactly, anything turned away renders its shade
-  // exactly, and the transition between them is what stays soft.
+  // So the stop sits close in: anything turned toward the sun at all renders
+  // its palette hex EXACTLY, anything turned away renders its shade exactly,
+  // and the soft transition is a narrow band between them. Measured across the
+  // set, every material's hue was landing dead on its documented value while
+  // its chroma sat 30-65% low — the ramp was parking most surfaces part-way
+  // between two colours, and part-way between two colours is always duller
+  // than either. This is flat shading; the ramp is the seam, not the field.
   float l = dot(n, uSunDir);
-  float t = smoothstep(-0.34, 0.26, l);
+  float t = smoothstep(-0.28, 0.1, l);
 
   // baked terrain shadow: a surface the sun cannot see falls to its shade value
   // however it happens to be turned

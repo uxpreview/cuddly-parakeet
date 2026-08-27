@@ -715,7 +715,18 @@ for (const leg of legs) {
   if (leg.ford) {
     // the crossing: shallow water running right across the path, bank to bank,
     // with the gravel bed readable through it
-    if (wl.length === 2) reach(wl[0], wl[1], 'riverShallow', 0.78)
+    // One water material. The crossing was rendering entirely in the shallow
+    // tint while the reach upstream of it rendered the documented hex, so the
+    // same river arrived at the ford as two different colours with a visible
+    // seam between them. The shallows are a rim at each bank, not the whole
+    // crossing.
+    if (wl.length === 2) {
+      const lo = Math.min(wl[0], wl[1])
+      const hi = Math.max(wl[0], wl[1])
+      reach(lo, lo + 0.8, 'riverShallow', 0.8)
+      reach(lo + 0.8, hi - 0.8, 'river', 0.8)
+      reach(hi - 0.8, hi, 'riverShallow', 0.8)
+    }
     continue
   }
   if (leg.deepWater) {

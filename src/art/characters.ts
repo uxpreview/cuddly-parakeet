@@ -265,12 +265,14 @@ export function buildDog(pose: DogPose = DOG_LOOK_BACK, occlusion = 0): THREE.Gr
     swing: number,
     front: boolean,
   ) => {
-    const hipY = front ? 0.36 : 0.365
-    const upperLen = front ? 0.13 : 0.15
-    const lowerLen = front ? 0.11 : 0.115
-    const bend = front ? -0.34 : 0.42
-    // upper: thicker, and on the front pair it carries the shoulder mass
-    const upper = capsule(front ? 0.05 : 0.048, upperLen - 0.02, 3, 7)
+    // Short and thick, and starting well inside the barrel. A leg that begins
+    // at the belly line leaves a visible gap under the body and the animal
+    // comes apart; a long thin one turns him into a goat.
+    const hipY = front ? 0.375 : 0.38
+    const upperLen = front ? 0.115 : 0.13
+    const lowerLen = front ? 0.1 : 0.105
+    const bend = front ? -0.3 : 0.38
+    const upper = capsule(front ? 0.056 : 0.054, upperLen - 0.02, 3, 7)
     place(upper, [0, -upperLen / 2, 0])
     place(upper, [0, 0, 0], [swing, 0, 0])
     place(upper, [x, hipY, z])
@@ -284,10 +286,14 @@ export function buildDog(pose: DogPose = DOG_LOOK_BACK, occlusion = 0): THREE.Gr
     place(lower, [x, kneeY, kneeZ])
     parts.push(paint(lower, coat, S))
 
+    // The sock overlaps the lower leg rather than sitting under it: as a
+    // separate lump it floated free of the leg by a visible gap.
     const footY = kneeY - Math.cos(swing + bend) * lowerLen
     const footZ = kneeZ + Math.sin(swing + bend) * lowerLen
-    const sock = capsule(0.036, 0.03, 3, 7)
-    place(sock, [x, footY + 0.015, footZ + 0.008])
+    const sock = capsule(0.036, 0.055, 3, 7)
+    place(sock, [0, -0.028, 0])
+    place(sock, [0, 0, 0], [swing + bend, 0, 0])
+    place(sock, [x, footY + 0.05, footZ - 0.012])
     parts.push(paint(sock, pts, S))
   }
   buildLeg(0.078, 0.145, pose.legFL, true)
@@ -359,12 +365,15 @@ export function buildDog(pose: DogPose = DOG_LOOK_BACK, occlusion = 0): THREE.Gr
   headParts.push(paint(place(sphere(0.017, 6, 5), [0, -0.018, 0.148]), DOG.nose.hex, 0.2))
   // Ears: BROAD, low on the skull, swept back against it. Narrow upright
   // triangles splayed off the crown are horns.
+  // Ears UP and pointed, raked back only a little. Raked hard they hang off the
+  // skull as floppy downward tabs, which is a goat, and art-direction.md is
+  // explicit that this dog has pointed ears.
   for (const side of [1, -1]) {
-    const ear = cone(0.052, 0.062, 4)
-    ear.scale(1, 1, 0.42)
-    place(ear, [0, 0.026, 0])
-    place(ear, [0, 0, 0], [-0.95, side * 0.42, side * 0.5])
-    place(ear, [0.055 * side, 0.036, -0.032])
+    const ear = cone(0.044, 0.085, 4)
+    ear.scale(1, 1, 0.5)
+    place(ear, [0, 0.04, 0])
+    place(ear, [0, 0, 0], [-0.26, side * 0.3, side * 0.34])
+    place(ear, [0.05 * side, 0.055, -0.018])
     headParts.push(paint(ear, coat, S))
   }
   for (const side of [1, -1]) {
@@ -412,7 +421,10 @@ export function buildDog(pose: DogPose = DOG_LOOK_BACK, occlusion = 0): THREE.Gr
 
   // The collar. Its own mesh, its own material, named for its asset id.
   // Red-audit whitelist entry 1 of 2. It wraps the NECK, behind the jaw.
-  const collarGeom = new THREE.TorusGeometry(0.07, 0.026, 6, 14)
+  // Wide and shallow, so its silhouette is a ring from any angle. A deep,
+  // narrow torus reads as a red tab hanging off the front of the throat.
+  const collarGeom = new THREE.TorusGeometry(0.076, 0.018, 6, 16)
+  collarGeom.scale(1, 1, 0.7)
   collarGeom.rotateX(Math.PI / 2 - 0.78)
   // Down at the base of the neck, clear of the skull. Sitting level with the
   // jaw it read as a red sticker on his cheek — a bandage or a luggage tag —

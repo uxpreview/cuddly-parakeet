@@ -83,7 +83,9 @@ const SURFACE: Record<string, { hex: string; shadow: number; grain?: number; tin
   limestone: { hex: CH1.limestone.hex, shadow: SHADOW_MIX.limestone, grain: 0.042 },
   rock: { hex: CH1.limestone.hex, shadow: SHADOW_MIX.limestone, grain: 0.028 },
   scrub: { hex: CH1.scrub.hex, shadow: SHADOW_MIX.foliage, grain: 0.03 },
-  deadwood: { hex: CH1.deadwood.hex, shadow: SHADOW_MIX.ground },
+  // A pine trunk that shares the wall's value and hue disappears into it and
+  // the canopy floats. Deadwood is darker than limestone by design.
+  deadwood: { hex: CH1.deadwood.hex, shadow: SHADOW_MIX.ground, tint: 0.82 },
   wood: { hex: CH1.deadwood.hex, shadow: SHADOW_MIX.ground },
   stone: { hex: CH1.townStone.hex, shadow: SHADOW_MIX.distant },
   water: { hex: CH1.river.hex, shadow: SHADOW_MIX.water },
@@ -947,11 +949,14 @@ function boulderGeometry(): THREE.BufferGeometry {
     const q = new THREE.Vector3().fromBufferAttribute(p, i)
     // pull each vertex toward one of three plane normals, so the lump comes out
     // of the ground with flat quarry faces instead of as a smooth pebble
-    const k = 0.7 + h1(Math.round(q.x * 97 + q.y * 31 + q.z * 13)) * 0.55
+    // Irregular in all three axes. Quantising only x and z left a straight
+    // apex ridge and bilateral symmetry, which reads as a canvas tent.
+    const k = 0.66 + h1(Math.round(q.x * 97 + q.y * 31 + q.z * 13)) * 0.6
     q.multiplyScalar(k)
-    q.x = Math.round(q.x * 2.4) / 2.4
-    q.z = Math.round(q.z * 2.2) / 2.2
-    q.y = q.y * 0.82 - 0.24
+    q.x = Math.round(q.x * 2.6 + h1(q.z * 37) * 0.6) / 2.6
+    q.y = Math.round(q.y * 2.2 + h1(q.x * 53) * 0.6) / 2.2
+    q.z = Math.round(q.z * 2.4 + h1(q.y * 41) * 0.6) / 2.4
+    q.y = q.y * 0.86 - 0.26
     v.push(q)
   }
   for (let i = 0; i < v.length; i += 3) {
@@ -961,7 +966,7 @@ function boulderGeometry(): THREE.BufferGeometry {
       v[i + 2],
       CH1.limestone.hex,
       SHADOW_MIX.limestone,
-      0.96 + h1(i) * 0.08,
+      0.98 + h1(i) * 0.04,
     )
   }
   base.dispose()

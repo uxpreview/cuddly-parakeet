@@ -244,7 +244,11 @@ export function makePrintTrail(
   kind: 'dog' | 'boy',
 ): THREE.InstancedMesh | null {
   if (steps.length === 0) return null
-  const size = kind === 'dog' ? 0.165 : 0.195
+  // Larger than the anatomy wants. Beyond about three metres a print smaller
+  // than this is averaged away by the sampler entirely — measured, the trail
+  // simply stopped existing past the near field — and the trail is half the
+  // navigation system.
+  const size = kind === 'dog' ? 0.215 : 0.24
   const geom = new THREE.PlaneGeometry(size * (kind === 'dog' ? 0.95 : 0.62), size)
   geom.rotateX(-Math.PI / 2)
 
@@ -254,7 +258,7 @@ export function makePrintTrail(
     uniforms: {
       uMap: { value: kind === 'dog' ? dogPrintTexture() : boyPrintTexture() },
       uColor: { value: srgbTint(CH1.limestoneShadow.hex) },
-      uStrength: { value: kind === 'dog' ? 0.5 : 0.34 },
+      uStrength: { value: kind === 'dog' ? 0.6 : 0.4 },
     },
   })
   mat.name = 'print:' + kind

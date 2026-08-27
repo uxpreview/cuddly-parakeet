@@ -41,7 +41,9 @@ export interface Stage {
  */
 export const STAGE_SAMPLES = { boy: 79, dog: 93, trailFrom: 60 }
 
-export const RIM_STAGE = { boy: 319, dog: 326, trailFrom: 306 }
+// far enough along the switchback that the portrait crop does not slice him in
+// half at the frame edge — in portrait the reveal had three red pixels
+export const RIM_STAGE = { boy: 319, dog: 330, trailFrom: 306 }
 
 /**
  * The ford. The chapter's water moment is a hazard-wait: he waits on the far

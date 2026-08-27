@@ -120,17 +120,17 @@ export const RED_WHITELIST = [DOG.collar.id, MAP.routeLine.id] as const
  * material: the boy's shirt has to still be a faded blue shirt with his back to
  * the sun. See docs/decisions.md D16.
  *
- * Limestone was 1.0, on the reading that art-direction.md naming `#9DA9A2` as
- * limestone's shadow side meant every shaded limestone face should measure it
- * exactly. That is the wrong reading and it cost the chapter its identity: rock
- * is three quarters of every frame, so a full slide put the shadow hex on
- * roughly half the picture while `#E3C08C` — the colour the chapter is named
- * by — appeared on under two percent of it. The document gives two hexes to
- * name a material's ENDPOINTS. `#9DA9A2` is Chapter 1's coolest value, not its
- * most common one.
+ * Limestone slides the whole way, so shaded limestone renders `#9DA9A2`
+ * exactly — the document names it, so it should measure. What made that ruinous
+ * once was not the slide but the RAMP: with a wide transition most rock sat
+ * part-way between the two hexes, and part-way between two colours is duller
+ * than either, so the shadow value spread across half the picture while
+ * `#E3C08C` appeared on under two percent of it. With the ramp narrowed a
+ * surface is either turned toward the sun or it is not, and both documented
+ * values appear at full strength.
  */
 export const SHADOW_MIX = {
-  limestone: 0.82,
+  limestone: 1.0,
   // Ground goes further toward the shadow key than anything else except
   // limestone itself. Pale limestone dust in shade really does go cool grey,
   // and the canyon floor is the largest surface in every frame: if its shade
@@ -145,7 +145,7 @@ export const SHADOW_MIX = {
   // supply the separation his albedo cannot: a shade side that goes properly
   // cool is what gives him a form to be seen as, and what lets the white points
   // read as points rather than as more of the same pale.
-  character: 0.34,
+  character: 0.2,
   distant: 0.26,
 } as const
 
