@@ -139,8 +139,13 @@ void main() {
   #else
     float shadowMix = uShadowMix;
   #endif
-  // value first, hue second
-  vec3 shade = mix(base * uShadeDrop, uShadowKey, shadowMix);
+  // Hue first, then value. Dropping the value before the hue mix lands the
+  // shade on a warm-dark version of the material, which on limestone made both
+  // walls of the canyon read warm and the chapter stopped being cool at all.
+  // Sliding toward the documented shadow-side colour first, and dropping the
+  // value after, keeps the shade side genuinely cool while the material still
+  // keeps as much of its own identity as its mix allows.
+  vec3 shade = mix(base, uShadowKey, shadowMix) * uShadeDrop;
 
   // Skylight. In shade the key light contributes nothing, so without this every
   // face of a cliff renders the same value and a wall in shadow has no form at
@@ -202,7 +207,12 @@ void main() {
   // walls and in the narrows, and it is the only thing in a chapter this
   // high-key that reaches the bottom of the value range.
   #ifdef USE_OCC_ATTR
-    col *= mix(0.72, 1.0, smoothstep(0.2, 0.72, vAo));
+    // Reaches further down than is comfortable on purpose. Measured across the
+    // whole set, minimum luminance was 59 and the first percentile 86-139: the
+    // pictures had no anchor value anywhere and read as fog rather than as a
+    // canyon. The deep places — the wall feet, the narrows, the undersides —
+    // are the only ones that can supply one in a chapter this high-key.
+    col *= mix(0.6, 1.0, smoothstep(0.1, 0.62, vAo));
   #endif
 
   // --- fog is the sky ------------------------------------------------------
@@ -217,7 +227,14 @@ void main() {
   // measured flat-lit, its opposing roof planes within 2/255 of each other, and
   // that was not the shading failing — it was ninety-four percent fog.
   fogT = clamp(fogT + low * fogT * 0.45, 0.0, 0.74);
-  col = mix(col, skyColor(viewDir), fogT);
+  // Fog carries VALUE toward the sky but only two thirds of the chroma loss.
+  // Pine is one of five hexes this chapter owns and distance was measuring it
+  // five times too desaturated; haze is allowed to describe distance and is not
+  // allowed to delete a documented colour.
+  vec3 hazed = mix(col, skyColor(viewDir), fogT);
+  float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
+  float hazedLum = dot(hazed, vec3(0.2126, 0.7152, 0.0722));
+  col = mix(hazed, col + (hazedLum - lum), 0.34);
 
   // a material allowed to disobey the light (the collar, and nothing else)
   col = mix(col, base, uFlatten);
@@ -321,7 +338,7 @@ export function makeRamp(opts: RampOptions = {}): THREE.ShaderMaterial {
       uHazeDepth: { value: opts.hazeDepth ?? 16 },
       uOpacity: { value: opts.opacity ?? 1 },
       uOcclusion: { value: opts.occlusion ?? 0 },
-      uShadeDrop: { value: opts.shadeDrop ?? 0.6 },
+      uShadeDrop: { value: opts.shadeDrop ?? 0.86 },
       uFlatten: { value: opts.flatten ?? 0 },
     },
   })

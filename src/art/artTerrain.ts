@@ -543,13 +543,17 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
       byWater.set(w.material, mb)
     }
     const src = SURFACE[w.material] ?? SURFACE.river
-    const a = w.range[0]
-    const b = w.range[1]
+    // One sample of overlap into each neighbour. A reach that stops exactly at
+    // its own range boundary leaves the water plane's straight edge hanging in
+    // mid-air, which at the ford read as a torn sticker across the sand.
+    const a = Math.max(0, w.range[0] - 1)
+    const b = Math.min(C.length - 1, w.range[1] + 1)
     const span = w.toK - w.fromK
     const SEG = Math.max(1, Math.min(6, Math.round(span * 1.5)))
     for (let i = a; i < b; i++) {
-      const y0 = w.levels[Math.max(0, Math.min(w.levels.length - 1, i - a))]
-      const y1 = w.levels[Math.max(0, Math.min(w.levels.length - 1, i + 1 - a))]
+      const li = i - w.range[0]
+      const y0 = w.levels[Math.max(0, Math.min(w.levels.length - 1, li))]
+      const y1 = w.levels[Math.max(0, Math.min(w.levels.length - 1, li + 1))]
       for (let k = 0; k < SEG; k++) {
         const kf0 = w.fromK + (span * k) / SEG
         const kf1 = w.fromK + (span * (k + 1)) / SEG

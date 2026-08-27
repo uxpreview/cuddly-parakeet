@@ -117,20 +117,30 @@ export const RED_WHITELIST = [DOG.collar.id, MAP.routeLine.id] as const
 
 /**
  * How far a surface's shade slides toward the chapter's documented shadow-side
- * color, AFTER the value drop the ramp applies first. Limestone is 1.0 because
- * art-direction.md names its shadow exactly; everything else is low, because a
- * shade that is mostly a lerp toward the shadow key stops being that material.
- * The boy's shirt has to still be a faded blue shirt with his back to the sun.
- * See docs/decisions.md D16.
+ * color, AFTER the value drop the ramp applies first. All of them are low,
+ * because a shade that is mostly a lerp toward the shadow key stops being that
+ * material: the boy's shirt has to still be a faded blue shirt with his back to
+ * the sun. See docs/decisions.md D16.
+ *
+ * Limestone was 1.0, on the reading that art-direction.md naming `#9DA9A2` as
+ * limestone's shadow side meant every shaded limestone face should measure it
+ * exactly. That is the wrong reading and it cost the chapter its identity: rock
+ * is three quarters of every frame, so a full slide put the shadow hex on
+ * roughly half the picture while `#E3C08C` — the colour the chapter is named
+ * by — appeared on under two percent of it. The document gives two hexes to
+ * name a material's ENDPOINTS. `#9DA9A2` is Chapter 1's coolest value, not its
+ * most common one.
  */
 export const SHADOW_MIX = {
-  limestone: 1.0,
+  limestone: 0.82,
   // Ground goes further toward the shadow key than anything else except
   // limestone itself. Pale limestone dust in shade really does go cool grey,
   // and the canyon floor is the largest surface in every frame: if its shade
   // value is close to its lit value there is no shadow in the picture at all.
   ground: 0.44,
-  foliage: 0.24,
+  // Pine is one of only five hexes Chapter 1 owns and it was measuring five
+  // times too desaturated. Foliage keeps nearly all of its own colour in shade.
+  foliage: 0.12,
   water: 0.2,
   character: 0.18,
   distant: 0.26,
