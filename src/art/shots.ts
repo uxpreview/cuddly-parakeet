@@ -193,9 +193,12 @@ export function buildShots(art: ArtTerrain, stage: Stage, cameras: CameraDef[]):
     shots.push({
       id: 'dog-read',
       label: 'Dog read: the collar at trail distance',
-      position: [a.x - lx * 0.6, a.y + 1.3, a.z - lz * 0.6],
-      lookAt: [d.x, d.y + 0.4, d.z],
-      fov: 44,
+      position: [a.x - lx * 0.6, a.y + 1.45, a.z - lz * 0.6],
+      lookAt: [d.x, d.y + 0.34, d.z],
+      // A long lens on purpose. The question this frame asks is whether the eye
+      // finds him at trail distance, and it cannot be asked of a twenty-pixel
+      // dog in the middle of an empty plate.
+      fov: 32,
     })
   }
 
