@@ -130,11 +130,14 @@ for (let i = 0; i < samples.length; i++) {
     const kind = leg[side]
     if (kind === 'none' || kind === 'knob' || kind === 'lowknob') continue
     if (kind === 'water') {
+      // water is flat per leg (stepping down at leg boundaries reads as
+      // riffles); per-sample levels made the river read as terraced stone
+      const legY = S(legRange[s.leg][0]).y
       const level = leg.ford
         ? anchorFordLevel()
         : leg.deepWater
-          ? s.y - 1.5
-          : s.y - 0.7
+          ? legY - 1.5
+          : legY - 0.7
       const off = leg.width / 2 + 4.5
       blocks.push({
         at: [round(s.x + lx * off * sign), round(level - 0.3), round(s.z + lz * off * sign)],
@@ -151,8 +154,10 @@ for (let i = 0; i < samples.length; i++) {
       const off = leg.width / 2 + 1.8
       blocks.push(pillar(s.x + lx * off * sign, s.z + lz * off * sign, s.y - 1, 10, i))
     } else if (kind === 'lowwall') {
+      // low enough to see the adjacent switchback leg (and the dog on it),
+      // high enough that its top can't be stepped onto
       const off = leg.width / 2 + 1.8
-      blocks.push(pillar(s.x + lx * off * sign, s.z + lz * off * sign, s.y - 1, 3.2, i))
+      blocks.push(pillar(s.x + lx * off * sign, s.z + lz * off * sign, s.y - 1, 1.8, i))
     } else if (kind === 'parapet') {
       const off = leg.width / 2 + 1.1
       blocks.push({
@@ -192,7 +197,7 @@ for (const leg of legs) {
     const lx = Math.sin(s.h)
     const lz = -Math.cos(s.h)
     const off = leg.width / 2 + 2.6
-    const hgt = kind === 'knob' ? 9 : 3.5
+    const hgt = kind === 'knob' ? 9 : 2.2 // low knobs keep cross-hairpin sightlines
     blocks.push({
       at: [round(s.x + lx * off * sign), round(s.y - 1 + hgt / 2), round(s.z + lz * off * sign)],
       size: [5.2, hgt, 5.2],
@@ -285,7 +290,12 @@ const ledgeBottomI = anchors['ledge-bottom'] + 2
 const logFarI = anchors['log-far']
 const hazard2I = logFarI + 2
 const rimWaitI = legAt('rim', 0.45)
-const nearMissI = legAt('sb2', 0.5)
+// Just below the rim on the first descending switchback: the town-reveal
+// framed camera establishes him there, looking back, with the town below.
+// The boy descends toward him in full view; at the authored approach the
+// staged almost plays, and the escape is a long visible trot down every
+// switchback — wide and beautiful, of sight not touch (D1).
+const nearMissI = legAt('sb1', 0.28)
 const exitI = legAt('sb3', 0.6)
 
 out('paths/dog-ch1-a.json', slice(boltStartI, hazard1I))
@@ -344,7 +354,7 @@ const manifest = {
     {
       type: 'near-miss',
       at: pos(nearMissI),
-      approach: 9,
+      approach: 11,
       contact: 'none',
       escape: 'paths/dog-ch1-esc.json',
     },

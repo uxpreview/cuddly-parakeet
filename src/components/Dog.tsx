@@ -1,7 +1,7 @@
 import { useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { world, sampleGround, type DogActivity } from '../game/world'
+import { world, sampleGround, isDev, type DogActivity } from '../game/world'
 
 // The dog is an actor, not an AI. This component executes the authored node
 // route from the chapter manifest and nothing else: no pathfinding, no
@@ -198,6 +198,27 @@ export function Dog() {
         st.nextGlanceAt = st.clock + 4 + Math.random() * 3
       }
       return st.clock < st.glanceUntil
+    }
+
+    // Dev-only: jump the actor to a node index (drives the headless staging
+    // harness; the field only ever gets set from the ?dev console hook).
+    if (isDev && world.dog.devSkipToNode >= 0) {
+      const idx = Math.min(world.dog.devSkipToNode, route.nodes.length - 1)
+      world.dog.devSkipToNode = -1
+      const rn = route.nodes[idx]
+      st.nodeIndex = idx
+      st.phase = 'main'
+      st.nodeStart = st.clock
+      st.phaseStart = st.clock
+      st.surge = false
+      st.lbPicked = false
+      st.sniffActive = false
+      st.sniffPauseUntil = 0
+      st.escapeLookDone = false
+      st.s = rn.s0
+      st.pos.copy(rn.points[0])
+      st.sniffPos.copy(rn.points[0])
+      if (rn.node.type === 'trot') st.nextLookBackAt = st.clock + 2
     }
 
     const advance = () => {

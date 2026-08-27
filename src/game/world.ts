@@ -45,6 +45,7 @@ export const world = {
     // whistle answer: the whistle system bumps this; the dog plays a bark-bounce
     bounceSeq: 0,
     lookAtPlayer: 0, // 0..1 blend the dog mesh uses to turn its head
+    devSkipToNode: -1, // dev-only staging harness hook; -1 = inactive
   },
 
   whistle: {

@@ -128,7 +128,9 @@ export function buildTerrainMeshes(terrain: GreyboxTerrain): THREE.Group {
     if (b.rotY) m.makeRotationY(b.rotY)
     m.setPosition(b.at[0], b.at[1], b.at[2])
     geom.applyMatrix4(m)
-    const tone = b.tone ?? 1
+    // quantize tone so blocks merge into a handful of meshes per surface,
+    // keeping draw calls flat while preserving the grey-box relief
+    const tone = Math.round((b.tone ?? 1) * 20) / 20
     const key = b.surface + '|' + tone
     let bucket = bySurface.get(key)
     if (!bucket) {
