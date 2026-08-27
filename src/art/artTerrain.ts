@@ -12,6 +12,27 @@ import { makeRamp, sunDirection } from './RampMaterial'
  */
 const WORLD_RAMP: [number, number] = [-0.17, 0.06]
 
+/**
+ * How much value a LIT face loses as it rakes away from the key light.
+ *
+ * With the ramp this narrow every lit face renders one identical colour, and
+ * once the baked shadow stopped falsely covering the near cliff that turned the
+ * whole wall into a flat sheet. This is the term that puts the facets back; see
+ * RampMaterial for the measurement.
+ */
+const WORLD_MODEL = 0.17
+
+/**
+ * Foliage gets a wider band than rock.
+ *
+ * A pine crown is four or five rounded lumps of a dozen facets each. Under the
+ * terrain's nearly-closed ramp every one of those facets is either fully lit or
+ * fully shaded, so a crown came out as a two-tone mosaic and most of it landed
+ * on the shade side — which is half of why the documented pine hex was
+ * effectively absent from the game.
+ */
+const FOLIAGE_RAMP: [number, number] = [-0.42, 0.18]
+
 // Builds the chapter's look from `terrain/canyon-art.json`. The engine knows
 // how to loft a cross-section along a centerline and how to stamp a small set
 // of primitives; it knows nothing about canyons. Where the canyon goes, how
@@ -77,7 +98,10 @@ export interface ArtTerrain {
 // `tint` is a flat multiplier on the documented hex, for surfaces that are the
 // same material in a different state — wet stone is limestone that is wet, not
 // a colour of its own — so the palette does not have to grow an entry for it.
-const SURFACE: Record<string, { hex: string; shadow: number; grain?: number; tint?: number }> = {
+const SURFACE: Record<
+  string,
+  { hex: string; shadow: number; grain?: number; tint?: number; bed?: number }
+> = {
   // `grain` is now a PER-FACE tone break, not a per-vertex gradient, so it is
   // the only thing separating one facet of ground from the next: on a gently
   // curved sweep like the gravel bar the ramp gives almost no variation, and at
@@ -87,20 +111,20 @@ const SURFACE: Record<string, { hex: string; shadow: number; grain?: number; tin
   // shadow that also steps, the near bank came out as a patchwork quilt. The
   // facet normals and the shadow steps supply most of the variation now; the
   // mottle only has to stop two adjacent faces being bit-identical.
-  path: { hex: CH1.path.hex, shadow: SHADOW_MIX.ground, grain: 0.05 },
-  gravel: { hex: CH1.path.hex, shadow: SHADOW_MIX.ground, grain: 0.055 },
-  dust: { hex: CH1.path.hex, shadow: SHADOW_MIX.ground, grain: 0.048 },
+  path: { hex: CH1.path.hex, shadow: SHADOW_MIX.ground, grain: 0.055 },
+  gravel: { hex: CH1.path.hex, shadow: SHADOW_MIX.ground, grain: 0.06 },
+  dust: { hex: CH1.path.hex, shadow: SHADOW_MIX.ground, grain: 0.052 },
   // Scree and sand are not their own colours. art-direction.md gives Chapter 1
   // five ground-and-stone hexes and no more; a talus slope is broken limestone
   // and a sand bar is the same pale gravel the path is. Inventing a value for
   // each of them is how a documented palette quietly becomes a suggestion — and
   // between them they were occupying more of the frame than the two hexes the
   // document actually names.
-  sand: { hex: CH1.path.hex, shadow: SHADOW_MIX.ground, grain: 0.048 },
+  sand: { hex: CH1.path.hex, shadow: SHADOW_MIX.ground, grain: 0.052 },
   wetstone: { hex: CH1.limestone.hex, shadow: SHADOW_MIX.limestone, grain: 0.04, tint: 0.78 },
-  scree: { hex: CH1.limestone.hex, shadow: SHADOW_MIX.limestone, grain: 0.062 },
-  limestone: { hex: CH1.limestone.hex, shadow: SHADOW_MIX.limestone, grain: 0.05 },
-  rock: { hex: CH1.limestone.hex, shadow: SHADOW_MIX.limestone, grain: 0.042 },
+  scree: { hex: CH1.limestone.hex, shadow: SHADOW_MIX.limestone, grain: 0.04 , bed: 0.045 },
+  limestone: { hex: CH1.limestone.hex, shadow: SHADOW_MIX.limestone, grain: 0.032 , bed: 0.04 },
+  rock: { hex: CH1.limestone.hex, shadow: SHADOW_MIX.limestone, grain: 0.03 , bed: 0.032 },
   scrub: { hex: CH1.scrub.hex, shadow: SHADOW_MIX.foliage, grain: 0.042 },
   // A pine trunk that shares the wall's value and hue disappears into it and
   // the canopy floats. Deadwood is darker than limestone by design.
@@ -119,6 +143,31 @@ function h1(n: number): number {
   const v = Math.sin(n * 12.9898) * 43758.5453
   return v - Math.floor(v)
 }
+/**
+ * Trilinear value noise. Unit lattice; scale the inputs to choose a wavelength.
+ * This exists because `vnoise` of a weighted sum of coordinates is not noise in
+ * three dimensions, it is a plane wave — see `mottle`.
+ */
+function vnoise3(x: number, y: number, z: number, seed: number): number {
+  const ix = Math.floor(x)
+  const iy = Math.floor(y)
+  const iz = Math.floor(z)
+  const fx = x - ix
+  const fy = y - iy
+  const fz = z - iz
+  const sx = fx * fx * (3 - 2 * fx)
+  const sy = fy * fy * (3 - 2 * fy)
+  const sz = fz * fz * (3 - 2 * fz)
+  const at = (cx: number, cy: number, cz: number) =>
+    h1(cx * 1.13 + cy * 7.31 + cz * 19.7 + seed * 57.7)
+  const lerp = (a: number, b: number, t: number) => a + (b - a) * t
+  const x00 = lerp(at(ix, iy, iz), at(ix + 1, iy, iz), sx)
+  const x10 = lerp(at(ix, iy + 1, iz), at(ix + 1, iy + 1, iz), sx)
+  const x01 = lerp(at(ix, iy, iz + 1), at(ix + 1, iy, iz + 1), sx)
+  const x11 = lerp(at(ix, iy + 1, iz + 1), at(ix + 1, iy + 1, iz + 1), sx)
+  return lerp(lerp(x00, x10, sy), lerp(x01, x11, sy), sz) * 2 - 1
+}
+
 function vnoise(x: number, seed: number): number {
   const i = Math.floor(x)
   const f = x - i
@@ -225,17 +274,26 @@ class MeshBuilder {
  * now take height, and the fast one takes it hardest, so the variation reads as
  * bedding across the face rather than as drips down it.
  */
-function mottle(p: THREE.Vector3, amount: number): number {
-  // Frequencies chosen against the FACE SIZE, which is the whole point of a
-  // per-face tone. The first pass kept the octaves it had when it was a
-  // per-vertex gradient — wavelengths of three and seven metres — and the loft's
-  // faces are one and a half. Neighbouring faces therefore drew almost the same
-  // tone, so making the tone per-face changed nothing visible on the canyon
-  // floor: it stayed one airbrushed cream field metres across. A tone break has
-  // to differ between ADJACENT faces to be a break at all.
-  const a = vnoise(p.x * 1.15 + p.z * 0.62 + p.y * 0.8, 3) * 0.58
-  const b = vnoise(p.x * 2.7 - p.z * 2.1 + p.y * 3.3, 11) * 0.42
-  return 1 + (a + b) * amount
+function mottle(p: THREE.Vector3, amount: number, bed = 0): number {
+  // ISOTROPIC, and that word is the whole fix.
+  //
+  // Both octaves used to be a one-dimensional noise of a LINEAR COMBINATION of
+  // x, y and z. A 1-D noise of `ax + by + cz` is constant on every plane
+  // perpendicular to (a, b, c) — it is a set of parallel bands, not a field —
+  // and two of them crossed at an angle is a lattice of parallelograms. That
+  // is exactly what the near walls rendered as: a quilt of axis-aligned blocks
+  // whose screen size barely changed with distance, which is what tripped the
+  // "visible image textures" item on the Gate 2 failure list. Real 3-D value
+  // noise has no preferred direction and no lattice.
+  const a = vnoise3(p.x * 1.9, p.y * 1.9, p.z * 1.9, 3) * 0.6
+  const b = vnoise3(p.x * 0.42, p.y * 0.42, p.z * 0.42, 11) * 0.4
+  // Stone also gets BEDDING: a slow band keyed on height alone, so the wall's
+  // variation reads as strata rather than as a pattern applied to it. The band
+  // boundary wanders along the run, so no ledge is a level ribbon.
+  const s = bed
+    ? vnoise(p.y * 0.62 + vnoise(p.x * 0.07 + p.z * 0.055, 23) * 0.4, 31)
+    : 0
+  return 1 + (a + b) * amount + s * bed
 }
 
 /** The centroid of a face, which is where its one tone is sampled. */
@@ -246,12 +304,13 @@ function faceTone(
   b: THREE.Vector3,
   c: THREE.Vector3,
   d?: THREE.Vector3,
+  bed = 0,
 ): number {
-  if (!amount) return 1
+  if (!amount && !bed) return 1
   _fc.copy(a).add(b).add(c)
   if (d) _fc.add(d).multiplyScalar(0.25)
   else _fc.multiplyScalar(1 / 3)
-  return mottle(_fc, amount)
+  return mottle(_fc, amount, bed)
 }
 
 export interface ArtScene {
@@ -437,12 +496,37 @@ class SunOcclusion {
     return v
   }
 
-  sample(x: number, y: number, z: number): number {
+  /**
+   * How much of the sun a point cannot see. Takes the surface's own normal,
+   * and it is not optional on anything vertical.
+   *
+   * The heightfield is 2 m cells and a cliff is near-vertical, so every point
+   * on a wall face lives inside the very column that represents that wall — and
+   * that column is as tall as the rim. Marching from the surface itself, the
+   * first sample 1.6 m along the sun's bearing was still inside the wall's own
+   * footprint, so the wall reported itself as blocking itself. Measured on the
+   * judged set: over the near wall in `vista`, 95.5% of faces were turned
+   * TOWARD the sun by the ramp's own test and not one was on its shade side,
+   * yet mean baked occlusion was 0.87. That is what put the documented shadow
+   * hex on 77-82% of a sunlit wall, and because whether a given face's centroid
+   * landed inside or outside its own column was essentially random, it is also
+   * what made the wall a chessboard.
+   *
+   * So the march starts clear of the surface: pushed out along the HORIZONTAL
+   * part of the normal, by an amount that is a full cell on a vertical face and
+   * exactly zero on a floor. The canyon floor's shadows are cast by the walls
+   * and terraces around it and are unaffected.
+   */
+  sample(x: number, y: number, z: number, nx = 0, nz = 0): number {
     const s = this.sun
     const flat = Math.hypot(s.x, s.z) || 1
     const dx = s.x / flat
     const dz = s.z / flat
     const dy = s.y / flat
+    // nx, nz are the horizontal components of a UNIT normal, so this is a full
+    // cell out from a vertical face and exactly nothing from a level one.
+    x += nx * this.cell * 1.05
+    z += nz * this.cell * 1.05
     // three rays fanned +/- 5 degrees: a soft edge instead of a hard cut
     let hit = 0
     for (const a of [-0.087, 0, 0.087]) {
@@ -628,6 +712,9 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
   const centroid = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3, d: THREE.Vector3) =>
     _cen.copy(a).add(b).add(c).add(d).multiplyScalar(0.25)
 
+  const _mc = new THREE.Vector3()
+  const _n0 = new THREE.Vector3()
+  const _n1 = new THREE.Vector3()
   const _sa = new THREE.Vector3()
   const _sb = new THREE.Vector3()
   const _sc = new THREE.Vector3()
@@ -670,10 +757,17 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
     // and a shadow edge crosses several faces as a stepped ramp. That is what
     // "long soft shadows" looks like when every polygon is one flat colour.
     const p = centroid(a, b, c, d)
-    let sum = shadow.sample(p.x, p.y, p.z)
+    // the face's own normal, so the march can start clear of the surface it is
+    // standing on — see SunOcclusion.sample
+    _n0.copy(b).sub(a)
+    _n1.copy(d).sub(a)
+    _n0.cross(_n1).normalize()
+    const nx = _n0.x
+    const nz = _n0.z
+    let sum = shadow.sample(p.x, p.y, p.z, nx, nz)
     for (const q of [a, b, c, d]) {
       _oc.copy(q).lerp(p, 0.35)
-      sum += shadow.sample(_oc.x, _oc.y, _oc.z)
+      sum += shadow.sample(_oc.x, _oc.y, _oc.z, nx, nz)
     }
     const v = sum / 5
     return [v, v, v, v]
@@ -708,10 +802,49 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
         // A sub-face takes whichever rung's material its own midpoint is nearer,
         // so the material boundary lands on a polygon edge rather than being
         // smeared across the widest face in the picture.
-        const kA = SURFACE[leg.chain[k].m] ?? SURFACE.limestone
-        const kB = SURFACE[leg.chain[k + 1].m] ?? SURFACE.limestone
-        const s0 = u0 < 0.5 ? kA : kB
-        const s1 = u1 <= 0.5 ? kA : kB
+        // ONE material for the whole face, chosen by the face's own midpoint.
+        //
+        // This was the last interpolated channel and it was the biggest one.
+        // The corners took [kA, kA, kB, kB], so any quad spanning a material
+        // change carried a GRADIENT across itself — and on the canyon floor the
+        // rungs are close enough together that they are never subdivided, so
+        // almost every floor face was such a quad. Measured on the judged set:
+        // `prints-desktop.png` y=600 ran 880 px of floor whose luminance walked
+        // 224 -> 193 -> 230 with no break anywhere in it, and the four faces
+        // under the near half of that row each held two different vertex
+        // colours (limestone at one corner, path at the others). That is
+        // Gouraud shading, it is what the soft light streaks down the floor
+        // were, and it is why the fix that landed on the walls never landed
+        // here: the walls' rungs are metres apart, so they subdivide, and a
+        // sub-face away from the boundary happened to come out flat.
+        //
+        // The price is that a material boundary is now a polygon edge. That is
+        // the idiom, and it is nearly invisible in practice: path, gravel,
+        // dust and sand are all `#EFE3C8`, so the only real boundary on the
+        // floor is where pale gravel meets limestone at the wall feet, which is
+        // a hard edge in the world too.
+        //
+        // The boundary WANDERS. A material change that lands exactly at the
+        // half-way point of every rung, on every sample down the canyon, is a
+        // ruled line a hundred metres long — the floor became a set of parallel
+        // ribbons and read as a road, which is precisely what the interpolated
+        // colour had been hiding. Offsetting the decision by a smooth 3-D noise
+        // at about two metres lets the two materials interlock along a ragged
+        // edge instead, which is what gravel giving way to stone looks like.
+        //
+        // The amplitude is small on purpose. At half a rung the two materials
+        // stopped forming an edge at all and started alternating face by face:
+        // pale gravel and warm limestone are thirty levels and a hue apart, so
+        // a floor that picks between them per face is a chessboard, and at a
+        // seventh of a rung the interlocking zone was still two metres wide.
+        // A fourteenth breaks the line without breaking the field.
+        _mc.copy(A).add(B).add(Cc).add(D).multiplyScalar(0.25)
+        const um =
+          (u0 + u1) * 0.5 +
+          vnoise3(_mc.x * 0.62, _mc.y * 0.62, _mc.z * 0.62, 71) * 0.07
+        const kMid = SURFACE[leg.chain[um < 0.5 ? k : k + 1].m] ?? SURFACE.limestone
+        const s0 = kMid
+        const s1 = kMid
         // Mottling, computed PER VERTEX from world position rather than per
         // face. Flat colour across a 1.5 m face is what makes low-poly ground
         // read as paper; a soft gradient across it is what stops that, and it
@@ -720,10 +853,11 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
         const g1 = s1.grain ?? 0
         const k0 = s0.tint ?? 1
         const k1 = s1.tint ?? 1
+        const bed = s0.bed ?? 0
         // One tone for the whole face. See `mottle`: sampling it at the corners
         // interpolates it, and an interpolated tone is a gradient painted over
         // the facet the flat shading exists to show.
-        const ft = faceTone((g0 + g1) * 0.5, A, B, Cc, D)
+        const ft = faceTone((g0 + g1) * 0.5, A, B, Cc, D, bed)
         const tone: [number, number, number, number] = [ft * k0, ft * k0, ft * k1, ft * k1]
         const hexes: [string, string, string, string] = [s0.hex, s0.hex, s1.hex, s1.hex]
         const shades: [number, number, number, number] = [s0.shadow, s0.shadow, s1.shadow, s1.shadow]
@@ -762,6 +896,8 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
     occlusionAttribute: true,
     shadowKey: CH1.limestoneShadow.hex,
     ramp: WORLD_RAMP,
+    // What gives a lit cliff its facets back. See RampMaterial.
+    model: WORLD_MODEL,
     hazeFloor: art.hazeFloor,
     hazeDepth: art.hazeDepth,
   })
@@ -919,7 +1055,15 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
     vertexColors: true,
     shadowAttribute: true,
     shadowKey: CH1.limestoneShadow.hex,
-    ramp: WORLD_RAMP,
+    ramp: FOLIAGE_RAMP,
+    model: WORLD_MODEL,
+    // A pine crown is a dozen rounded facets and half of what the camera sees
+    // of one from the canyon floor points DOWNWARD. At the world's 0.45 those
+    // faces lost nearly half their value on top of the shade slide, and the
+    // documented `#4E6E58` rendered `#44584B` — dE 27, and the hex was present
+    // on 0.0-1.8% of every frame in the judged set. A canopy underside is
+    // genuinely darker than its top; it is not half as bright.
+    skyDrop: 0.22,
     hazeFloor: art.hazeFloor,
     hazeDepth: art.hazeDepth,
   })
@@ -1038,6 +1182,7 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
     shadowAttribute: true,
     shadowKey: CH1.limestoneShadow.hex,
     ramp: WORLD_RAMP,
+    model: WORLD_MODEL * 0.6,
     hazeFloor: art.hazeFloor,
     hazeDepth: art.hazeDepth,
     side: THREE.DoubleSide,

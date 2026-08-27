@@ -152,6 +152,8 @@ uniform float uShadeDrop;
 uniform float uFlatten;
 uniform float uRampLo;
 uniform float uRampHi;
+uniform float uModel;
+uniform float uSkyDrop;
 
 ${SKY_GLSL}
 
@@ -206,7 +208,7 @@ void main() {
   // chapter arrived bleached. Where a surface should read cool in shade, the
   // per-material slide toward the documented shadow-side colour is what does
   // it — deliberately, per material, and measurably.
-  float sky = 1.0 - 0.45 * clamp(-n.y, 0.0, 1.0);
+  float sky = 1.0 - uSkyDrop * clamp(-n.y, 0.0, 1.0);
   shade *= sky;
 
   // The ramp. One soft transition, and it has to REACH both ends.
@@ -265,6 +267,27 @@ void main() {
   t = mix(t, t * 0.08, occ);
 
   vec3 col = mix(shade, base, t);
+
+  // Facet modelling, on the LIT side only.
+  //
+  // The ramp is deliberately narrow — a surface is either turned toward the key
+  // light or it is not — and the consequence nobody had measured is that
+  // everything past its upper stop renders one IDENTICAL colour. Once the baked
+  // shadow stopped falsely covering the near cliff, that showed: over the near
+  // wall in the vista shot every face sits between 0.09 and 0.42 in n.sun, all
+  // past the stop, and the whole cliff came out as a single flat sheet with
+  // of them past the stop, and the whole cliff came out as a single flat sheet
+  // with 91.5% of its pixels within dE 1.8 of #E3C08C and no facet visible
+  // anywhere. That is the same airbrush the wide ramp produced, reached from
+  // the other end, and it is what left a noise texture as the wall's only
+  // variation — which is what read as an applied tiling pattern.
+  //
+  // So the lit side keeps a little Lambert in it. A surface square to the key
+  // light renders its documented hex EXACTLY; one raking across it renders a
+  // few percent under. Nothing brightens past the documented value, which is
+  // the half of that rule that has to hold.
+  float model = mix(1.0 - uModel, 1.0, smoothstep(0.0, 0.5, l));
+  col *= mix(1.0, model, t);
 
   // Contact darkening. Sky visibility, marched once at load: 1 in the open, low
   // where the ground closes in. This is what puts a dark at the feet of the
@@ -368,6 +391,14 @@ export interface RampOptions {
   ramp?: [number, number]
   /** Pull the result back toward the unlit base colour. 1 = ignores the light. */
   flatten?: number
+  /**
+   * How much value a lit face loses as it rakes away from the key light. This
+   * is what makes facets visible on the lit side of a narrow ramp; 0 is a flat
+   * sheet of the documented hex.
+   */
+  model?: number
+  /** How far an underside falls for seeing no sky. Foliage wants less. */
+  skyDrop?: number
   vertexColors?: boolean
   transparent?: boolean
   opacity?: number
@@ -430,6 +461,8 @@ export function makeRamp(opts: RampOptions = {}): THREE.ShaderMaterial {
       uFlatten: { value: opts.flatten ?? 0 },
       uRampLo: { value: opts.ramp?.[0] ?? -0.28 },
       uRampHi: { value: opts.ramp?.[1] ?? 0.1 },
+      uModel: { value: opts.model ?? 0 },
+      uSkyDrop: { value: opts.skyDrop ?? 0.45 },
       uMinScreenCenter: {
         value: new THREE.Vector3(...(opts.minScreenCenter ?? [0, 0, 0])),
       },
