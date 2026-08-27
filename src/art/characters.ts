@@ -30,8 +30,11 @@ export interface BoyPose {
 export const BOY_WALK: BoyPose = {
   legL: 0.52,
   legR: -0.44,
-  armL: -0.3,
-  armR: 0.26,
+  // Swung far enough that daylight shows between arm and body. An arm hanging
+  // straight down a rounded torso welds to it in silhouette, and the boy loses
+  // the one thing that says he is walking.
+  armL: -0.62,
+  armR: 0.5,
   headY: 0.16,
   headP: -0.05,
   lean: 0.07,
@@ -134,21 +137,21 @@ export function buildBoy(pose: BoyPose = BOY_WALK, occlusion = 0): THREE.Group {
 
     const arm = capsule(0.041, 0.17, 3, 7)
     place(arm, [0, -0.115, 0])
-    place(arm, [0, 0, 0], [ang, 0, 0])
-    place(arm, [0.13 * side, 0.735, 0])
+    place(arm, [0, 0, 0], [ang, 0, side * -0.16])
+    place(arm, [0.142 * side, 0.735, 0])
     parts.push(paint(arm, skin, S))
 
     // short sleeve, overlapping both the shoulder and the arm
     const sl = capsule(0.052, 0.05, 3, 8)
     place(sl, [0, -0.045, 0])
-    place(sl, [0, 0, 0], [ang, 0, 0])
-    place(sl, [0.13 * side, 0.735, 0])
+    place(sl, [0, 0, 0], [ang, 0, side * -0.16])
+    place(sl, [0.142 * side, 0.735, 0])
     parts.push(paint(sl, BOY.shirt.hex, S))
 
     const hand = sphere(0.042, 7, 5)
     place(hand, [0, -0.225, 0])
-    place(hand, [0, 0, 0], [ang, 0, 0])
-    place(hand, [0.13 * side, 0.735, 0])
+    place(hand, [0, 0, 0], [ang, 0, side * -0.16])
+    place(hand, [0.142 * side, 0.735, 0])
     parts.push(paint(hand, skin, S))
   }
 

@@ -188,6 +188,14 @@ export interface ArtScene {
   materials: THREE.Material[]
   /** 0 = in full sun, 1 = fully in a terrain shadow, at any world point. */
   sunOcclusionAt: (x: number, y: number, z: number) => number
+  /**
+   * Ground height of the ART surface at a point, or null where there is none.
+   * Characters and prints stand on this, not on the grey box: the two agree
+   * almost everywhere, and where they deliberately do not — the ford bed sits
+   * half a metre lower than its collision slab so the crossing is under
+   * water — standing on the collision height leaves the boy on top of the river.
+   */
+  groundAt: (x: number, z: number) => number | null
 }
 
 // Coarse heightfield + shadow march. Built once at load; the whole canyon
@@ -759,6 +767,10 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
     hazeFloor: art.hazeFloor,
     materials,
     sunOcclusionAt: (x, y, z) => shadow.sample(x, y, z),
+    groundAt: (x, z) => {
+      const h = shadow.heightAt(x, z)
+      return h < -1e8 ? null : h
+    },
   }
 }
 

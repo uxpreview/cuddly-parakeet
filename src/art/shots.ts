@@ -41,7 +41,14 @@ export interface Stage {
  */
 export const STAGE_SAMPLES = { boy: 79, dog: 93, trailFrom: 60 }
 
-export const RIM_STAGE = { boy: 319, dog: 332, trailFrom: 306 }
+export const RIM_STAGE = { boy: 319, dog: 326, trailFrom: 306 }
+
+/**
+ * The ford. The chapter's water moment is a hazard-wait: he waits on the far
+ * side while the boy is in the crossing. Submitting the river empty of both of
+ * them describes the material and not the beat.
+ */
+export const FORD_STAGE = { boy: 97, dog: 106, trailFrom: 88 }
 
 type Ground = (x: number, z: number, fromY: number) => { y: number } | null
 

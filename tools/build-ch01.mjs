@@ -480,7 +480,7 @@ function wallSide(W, surf, top = 1) {
 function waterSide(W, surf) {
   return [
     P(W, 0.1, surf, 0.08, 'edge'),
-    P(W + 0.55, -0.3, 'sand', 0.12, 'bank'),
+    P(W + 0.55, -0.3, 'wetstone', 0.12, 'bank'),
     P(W + 1.15, -0.95, 'wetstone', 0.1, 'waterline'),
     P(W + 8.4, -1.15, 'wetstone', 0.16, 'bed'),
     P(W + 9.5, 0.1, 'sand', 0.22, 'farbank'),
@@ -500,6 +500,8 @@ function waterSide(W, surf) {
 function fordSide(W, surf) {
   return [
     P(W, -0.14, surf, 0.05, 'edge'),
+    // a damp band above the waterline: art-direction.md asks for soft contact
+    // darkening where things meet ground, and a shoreline is the clearest case
     P(W + 0.5, -0.3, 'wetstone', 0.08, 'bank'),
     P(W + 0.95, -0.6, 'wetstone', 0.1, 'waterline'),
     P(W + 6.6, -0.9, 'wetstone', 0.16, 'bed'),
@@ -625,7 +627,10 @@ for (const leg of legs) {
   const track = Math.min(W * 0.45, 1.35)
   // the crossing is a dip you wade: the bed sits below the water level across
   // the whole ford leg, so the path enters and leaves the water at its ends
-  const bed = leg.ford ? -0.34 : 0
+  // Deep enough that the whole crossing is under water even where the profile
+  // blends back into the banks either side: a bed that surfaces mid-ford leaves
+  // the water plane cutting a spiky outline through the path.
+  const bed = leg.ford ? -0.52 : 0
   const chain = []
   for (let i = leftHalf.length - 1; i >= 1; i--) {
     const p = leftHalf[i]
@@ -660,7 +665,7 @@ const chainIndex = (legName, tag, nth = 0) => {
 const rawLevel = samples.map((s) => {
   const leg = legByName[s.leg]
   if (leg.deepWater) return s.y - 1.6
-  if (leg.ford) return S(anchors['ford-near']).y - 0.3
+  if (leg.ford) return S(anchors['ford-near']).y - 0.34
   return s.y - 0.95
 })
 const waterLevel = rawLevel.map((_, i) => {

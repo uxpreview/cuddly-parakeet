@@ -9,7 +9,14 @@ import { makeBlobShadow, makePrintTrail } from './decals'
 import { CH1_LIGHT } from './palette'
 import { Grain } from './Grain'
 import { Sky } from './Sky'
-import { buildShots, buildStage, RIM_STAGE, STAGE_SAMPLES, type Shot } from './shots'
+import {
+  buildShots,
+  buildStage,
+  FORD_STAGE,
+  RIM_STAGE,
+  STAGE_SAMPLES,
+  type Shot,
+} from './shots'
 
 // Gate 2: the art bible. One static scene, canyon at morning, with the
 // documented Chapter 1 palette applied and nothing simulated. It loads exactly
@@ -32,13 +39,33 @@ function Scene({ shot, onShots }: { shot: string; onShots: (s: Shot[]) => void }
   const built = useMemo(() => {
     if (!world.art || !world.manifest || !terrain) return null
     const art = terrain
-    const atRim = shot === 'town-reveal'
+    // The canyon staging is the art bible proper. Two viewpoints get their own,
+    // because judging a framed moment without its subject in it judges nothing:
+    // the manifest's town-reveal camera, and the ford.
+    const samples =
+      shot === 'town-reveal' ? RIM_STAGE : shot === 'ford' ? FORD_STAGE : STAGE_SAMPLES
     const stage = buildStage(
       world.art,
-      (x, z, y) => sampleGround(x, z, y),
-      atRim ? RIM_STAGE : STAGE_SAMPLES,
+      (x, z, y) => {
+        const art = terrain.groundAt(x, z)
+        if (art !== null) return { y: art }
+        const g = sampleGround(x, z, y)
+        return g ? { y: g.y } : null
+      },
+      samples,
     )
-    const shots = buildShots(world.art, buildStage(world.art, (x, z, y) => sampleGround(x, z, y), STAGE_SAMPLES), world.manifest.cameras)
+    const shots = buildShots(
+      world.art,
+      buildStage(
+        world.art,
+        (x, z) => {
+          const g = terrain.groundAt(x, z)
+          return g === null ? null : { y: g }
+        },
+        STAGE_SAMPLES,
+      ),
+      world.manifest.cameras,
+    )
 
     const group = new THREE.Group()
     group.add(art.group)
