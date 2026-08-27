@@ -118,16 +118,17 @@ specified. The tail and the look-back are the two most animated things in the
 game, and the look-back needs at least three variants so the pattern reads as
 behavior rather than a loop.
 
-At night his eyes catch light. Chapter 3 depends on this one detail.
+In the dark his eyes catch light. The end of chapter 3, dusk gone to true
+dark, depends on this one detail, and it carries into the night of chapter 4.
 
 ---
 
 ## Footprints and pawprints
 
-Carried over from the original design. Prints in dust, sand, and gravel only,
-surface-dependent, the boy's fading in about 20 seconds, the dog's holding
-about twice as long because they are the trail the game is asking the player
-to read. In the town's stone streets there are no prints, which is exactly why
+Prints in dust, sand, and gravel only, surface-dependent, the boy's fading in
+about 20 seconds, the dog's holding about twice as long because they are the
+trail the game is asking the player to read. Exact lifetimes are owned by
+`docs/game-design.md`; this document owns only how they look. In the town's stone streets there are no prints, which is exactly why
 chapter 2's tracking shifts to knocked-over things and witnesses.
 
 ---

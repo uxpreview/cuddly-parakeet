@@ -12,15 +12,18 @@ prompts stay short and point at the gates.
 
 ## Note for future sessions
 
-**Status.** Session 0 (the comprehension check) has been run. It surfaced a
-list of contradictions and open decisions across the four docs — notably: the
-two conflicting definitions of "near-miss" (story's wide chapter-1 sighting vs
-game-design's ~1 m almost-touch node), chapter 3 lighting "real time" vs
-route-progress, whose route the map line represents, the undefined saturation
-threshold in the red audit, and the manifest schema gaps for witnesses, false
-whistle sources, gait blending and surface tagging. The human resolves these;
-do not resolve them silently in code. If a gate forces one of them, stop and
-ask.
+**Status.** Session 0 (the comprehension check) has been run, and the
+mechanical contradictions it surfaced have been resolved into the docs. The
+rulings and their rationale live in `docs/decisions.md` — read it alongside
+the four governing docs. The creative **[OPEN]** items in `docs/story.md`
+(boy's face, narration, the dog's name, the door, the count of "town knows
+this dog" moments) are still the human's to decide; do not resolve them
+silently in code. If a gate forces one, stop and ask.
+
+**Scaffold exists.** The Vite + React Three Fiber + Zustand project is already
+set up at the repo root with a placeholder scene, and the repo deploys to
+Vercel on push. Session 1 should build Gate 1 inside this scaffold, not
+re-create it.
 
 **Mechanics reference, not style reference.** Two screenshots live in
 `docs/reference/` (`mechanics-reference-desktop.jpg`,

@@ -34,7 +34,10 @@ Per-chapter behavior, from the story bible:
 - **Canyon:** answers are clean, close and honest. Teaches the loop.
 - **Old Town:** barks echo off stone and arrive from plausible wrong
   directions. Implemented as authored false-direction sources per zone, not
-  simulated acoustics. Tracking and witnesses take over as the reliable signal.
+  simulated acoustics. False sources carry their own visual correlates too
+  (pigeons off the wrong roofline, a gate swinging in the wrong lane), so the
+  misdirection works identically with sound off. Tracking and witnesses take
+  over as the reliable signal.
 - **Woods:** honest again, and the primary navigation for the chapter.
 - **Shore:** the dog is beside you. Whistling makes him look up at the boy.
   Nothing else. Keep this, it is a small gift to the player.
@@ -62,9 +65,13 @@ The route is a chain of nodes in the chapter manifest. Node types:
   bearing for the twist
 - **look-back** — an authored look-back with at least three animation variants
   so the pattern reads as behavior, not a loop
-- **near-miss** — allows the player to close to about a meter, plays the staged
-  almost-touch, then breaks away along an escape path. Only exists where the
-  story places it
+- **near-miss** — allows the player to close to an authored approach distance,
+  plays the staged almost, then breaks away along an escape path. The approach
+  distance and payoff are per-node data: chapter 1's is staged wide on the
+  switchbacks (a near-miss of sight, not of touch), chapter 2's closes to
+  contact with a `contact` variant, the collar touched and slipping through
+  his fingers. At touch range the almost-touch animation plays. Only exists
+  where the story places it
 - **vanish / appear** — for transitions where he slips out of sight. He only
   teleports while fully occluded, never on screen
 
@@ -114,10 +121,9 @@ seconds. Verify every framed moment in portrait 19.5:9 before calling it done.
 
 ## Controls
 
-**Desktop:** WASD or arrows to walk, Space or W-toward for nothing (no jump,
-ignore), Enter for context action, E or Enter for whistle... no. Final:
-arrows/WASD walk, **F or Space to whistle**, Enter for context action, ESC menu.
-Legend on first load only, glyph style, dismisses on input.
+**Desktop:** arrows/WASD walk, **F or Space to whistle**, Enter for context
+action, ESC menu. No jump, no run. Legend on first load only, glyph style,
+dismisses on input.
 
 **Mobile:** floating joystick in the lower right quadrant, appearing where the
 thumb lands. **Whistle button lower left, always visible**, drawn as a small
@@ -143,7 +149,8 @@ The engine logs the player's position as a polyline, one sample per ~2 meters
 moved, simplified. At the end of chapters 1, 2 and 4 the map screen renders the
 day so far as a dotted line in collar red on the hand-drawn coast map, drawing
 itself over a few seconds. Landmarks appear only if the player actually passed
-them. Chapter 3 skips the map by design. No numbers on it, ever.
+them. A landmark is a named trigger volume in the manifest; entering it marks
+it passed. Chapter 3 skips the map by design. No numbers on it, ever.
 
 ---
 
@@ -156,15 +163,17 @@ Chapters are JSON. The engine reads them. No chapter-specific code.
   "id": "ch01-canyon",
   "title": "The Canyon",
   "spawn": { "position": [0, 0, 0], "facing": 90 },
+  "gait": { "from": "light", "to": "light" },   // boy's gait states, blended by route progress
   "lighting": {
     "states": [
       { "id": "morning", "sunDir": [-40, 30], "sun": "#F2DFAE",
         "ambient": "#CFE3E0", "fog": { "color": "#DCE8E4", "near": 40, "far": 140 } }
     ],
-    "blendBy": "none"
+    "blendBy": "none"                            // "none" | "routeProgress" (the woods)
   },
   "environment": {
     "terrain": "terrain/canyon.glb",
+    "surfaces": "terrain/canyon-surfaces.json",  // dust/gravel/sand regions for prints
     "props": [
       { "model": "props/fallen-pine.glb", "at": [62, 2, 14] }
     ]
@@ -173,17 +182,31 @@ Chapters are JSON. The engine reads them. No chapter-specific code.
     { "type": "trot", "path": "paths/dog-ch1-a.json" },
     { "type": "hazard-wait", "at": [88, 3, 20], "safetyTrigger": "ford-crossed" },
     { "type": "look-back", "at": [120, 5, 9], "variant": "auto" },
-    { "type": "near-miss", "at": [210, 12, 4], "escape": "paths/dog-ch1-b.json" }
+    { "type": "near-miss", "at": [210, 12, 4], "approach": 8,
+      "contact": "none", "escape": "paths/dog-ch1-b.json" }
+    // near-miss: "approach" is the authored closing distance in meters;
+    // "contact" is "none" or an authored variant, e.g. ch2's "collar-touch"
   ],
   "trail": {
     "pawprintSurfaces": ["dust", "gravel", "sand"],
-    "disturbances": [],
-    "witnesses": [],
+    "disturbances": [
+      // { "id": "crate-1", "prop": "props/crate.glb", "at": [0, 0, 0],
+      //   "state": "knocked" }
+    ],
+    "witnesses": [
+      // { "id": "fishmonger", "at": [0, 0, 0], "react": "point",
+      //   "facing": 120, "trigger": "proximity" }
+    ],
     "glimpses": [
       { "id": "switchback-view", "volume": "volumes/rim.glb", "focus": "dog" }
     ]
   },
-  "whistle": { "mode": "honest", "falseSources": [] },
+  "whistle": {
+    "mode": "honest",                            // "honest" | "misleading" | "companion"
+    "falseSources": [
+      // { "zone": "volumes/market.glb", "answerAt": [0, 0, 0], "cue": "pigeons" }
+    ]
+  },
   "triggers": [
     { "id": "ford-crossed", "shape": "box", "at": [92, 2, 20], "size": [6, 4, 10] }
   ],
@@ -206,6 +229,9 @@ chapters. No one-offs.
 
 Chapter-level only. Chapter select from the menu once reached. The logged route
 polylines persist per save so the final map is truthful about the whole day.
+The save keeps one polyline per chapter; replaying a chapter from chapter
+select overwrites that chapter's line, latest play wins, so the final map is
+always one coherent day.
 
 ---
 

@@ -137,7 +137,8 @@ through it reads as a dog being a dog.
 
 ## Chapters
 
-Total 40 to 50 minutes with wandering.
+Total 40 to 50 minutes with wandering. The per-chapter times below are critical
+path; wandering supplies the difference.
 
 ### Chapter 1: The Canyon
 **~8 minutes. Morning. Worry, then rhythm.**
@@ -180,8 +181,11 @@ collar. It slips through his fingers.
 ### Chapter 3: The Woods
 **~10 minutes. Golden hour into dusk. The dark walk.**
 
-Stone pines on the ridge above the coast. The light dies across this chapter in
-real time, amber to blue to genuinely dark, and the game's tone shifts with it.
+Stone pines on the ridge above the coast. The light dies across this chapter as
+the boy moves through it, keyed to route progress rather than clock time (see
+`docs/game-design.md`), amber to blue to genuinely dark, and the game's tone
+shifts with it. A wandering player is never punished with darkness they did not
+choose.
 This is the chapter that earns the ending, and the closest the game comes to
 fear, all of it environmental: shapes, wind, the boy's own smallness. Never the
 dog.
@@ -223,6 +227,11 @@ At the end of each chapter the day so far appears as a dotted line on a
 hand-drawn paper map of the coast, in the tradition of a wandering-child dotted
 path. It is charming after chapter 1, funny after chapter 2, and quietly moving
 after chapter 4, when the full line reveals the route was a plan.
+
+The line is the boy's actual walked path, wander and all. Its spine is still
+the dog's route, because the required path is his, and that is why the full
+line reads as his plan: the detours around the ford, the cliff and the road are
+the shape he chose, and the player's wandering is texture on top of it.
 
 Chapter 3 skips the map. Dusk into night should not be interrupted by paper.
 **[LOAD-BEARING]** The map is punctuation, and that beat needs none.

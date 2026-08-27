@@ -91,7 +91,7 @@ Measure and report actual numbers. Never assert.
 | Budget | Target |
 |---|---|
 | Desktop framerate | Sustained 60fps |
-| Mobile framerate | 30fps floor on a mid-range 2019-class phone |
+| Mobile framerate | 30fps floor on a mid-range 2019-class phone (reference devices: iPhone 11, Pixel 3a) |
 | Draw calls | Under 200 in the Old Town, under 150 elsewhere |
 | Initial payload | Under 10 MB to first playable, chapters lazy-loaded |
 | Time to first interactive | Under 4 seconds on 4G |
@@ -103,9 +103,11 @@ The Old Town is the stress case. Budget against it, not the canyon.
 ## The red audit
 
 An automated script, run at Gates 2, 5, 6 and 7. It scans every material,
-vertex color and palette constant in the build and **fails on any color in hue
-350 through 15 at meaningful saturation** that is not the collar material or
-the map route line. The rule that red belongs to the dog dies at the prop level
+vertex color and palette constant in the build and **fails on any color with
+hue 350 through 15, saturation at or above 25% and value at or above 20%
+(HSV)** that is not on the whitelist. The whitelist is exactly two asset ids:
+the collar material and the map route line. Anything under those thresholds is
+grey or near-black, not red. The rule that red belongs to the dog dies at the prop level
 if a human has to enforce it by eye, so a script enforces it instead.
 
 ---
