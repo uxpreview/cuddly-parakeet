@@ -64,7 +64,10 @@ export interface ArtTerrain {
 
 // material id -> the palette entry it paints with, and how far that surface
 // slides toward the chapter's documented shadow-side colour in shade
-const SURFACE: Record<string, { hex: string; shadow: number; grain?: number }> = {
+// `tint` is a flat multiplier on the documented hex, for surfaces that are the
+// same material in a different state — wet stone is limestone that is wet, not
+// a colour of its own — so the palette does not have to grow an entry for it.
+const SURFACE: Record<string, { hex: string; shadow: number; grain?: number; tint?: number }> = {
   path: { hex: CH1.path.hex, shadow: SHADOW_MIX.ground, grain: 0.04 },
   gravel: { hex: CH1.path.hex, shadow: SHADOW_MIX.ground, grain: 0.045 },
   dust: { hex: CH1.path.hex, shadow: SHADOW_MIX.ground, grain: 0.038 },
@@ -75,7 +78,7 @@ const SURFACE: Record<string, { hex: string; shadow: number; grain?: number }> =
   // between them they were occupying more of the frame than the two hexes the
   // document actually names.
   sand: { hex: CH1.path.hex, shadow: SHADOW_MIX.ground, grain: 0.035 },
-  wetstone: { hex: CH1.wetStone.hex, shadow: SHADOW_MIX.ground, grain: 0.03 },
+  wetstone: { hex: CH1.limestone.hex, shadow: SHADOW_MIX.limestone, grain: 0.03, tint: 0.78 },
   scree: { hex: CH1.limestone.hex, shadow: SHADOW_MIX.limestone, grain: 0.055 },
   limestone: { hex: CH1.limestone.hex, shadow: SHADOW_MIX.limestone, grain: 0.042 },
   rock: { hex: CH1.limestone.hex, shadow: SHADOW_MIX.limestone, grain: 0.028 },
@@ -476,11 +479,13 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
         // has to be a gradient or the ground becomes a patchwork of tiles.
         const g0 = s0.grain ?? 0
         const g1 = s1.grain ?? 0
+        const k0 = s0.tint ?? 1
+        const k1 = s1.tint ?? 1
         const tone: [number, number, number, number] = [
-          g0 ? mottle(A, g0) : 1,
-          g0 ? mottle(B, g0) : 1,
-          g1 ? mottle(Cc, g1) : 1,
-          g1 ? mottle(D, g1) : 1,
+          (g0 ? mottle(A, g0) : 1) * k0,
+          (g0 ? mottle(B, g0) : 1) * k0,
+          (g1 ? mottle(Cc, g1) : 1) * k1,
+          (g1 ? mottle(D, g1) : 1) * k1,
         ]
         const hexes: [string, string, string, string] = [s0.hex, s0.hex, s1.hex, s1.hex]
         const shades: [number, number, number, number] = [s0.shadow, s0.shadow, s1.shadow, s1.shadow]

@@ -39,8 +39,6 @@ export const CH1 = {
 
   // [DERIVED] Values art-direction.md does not name. Each is a documented
   // palette hex moved along one axis only, so nothing new enters the chapter.
-  /** Wet stone in the ford and under the fallen pine. */
-  wetStone: c('ch1.wetstone', '#B9AE96'),
   /** The fallen pine's dead trunk: pine drained of green, not a new hue. */
   deadwood: c('ch1.deadwood', '#8A7C64'),
   /** River shallows over gravel: `river` lifted toward the path value. */

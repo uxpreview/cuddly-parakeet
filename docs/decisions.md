@@ -128,12 +128,15 @@ Gate 2's first passes invented a colour wherever the world needed one: sand at
 the swimming hole, scree at the wall feet, a roof colour for the town. Between
 them the invented values were occupying more of the frame than the two hexes
 `art-direction.md` actually names, which is how a documented palette quietly
-becomes a suggestion. **Ruling:** a talus slope is broken limestone and a sand
-bar is the same pale gravel the path is, so `scree` and `sand` are gone and
-those surfaces render `#E3C08C` and `#EFE3C8`. What remains derived is only
-what the documented five genuinely cannot say: wet stone at a waterline, dead
-wood, canyon scrub, two river depths, and the town's stone and roofs seen from
-across the valley. Each is recorded in `src/art/palette.ts` and each is a
+becomes a suggestion. **Ruling:** a talus slope is broken limestone, a sand
+bar is the same pale gravel the path is, and wet stone is limestone that is
+wet — so `scree`, `sand` and `wetstone` are gone. Those surfaces render
+`#E3C08C` and `#EFE3C8`, wet stone as the limestone hex under a flat 0.78
+multiplier, because a material in a different state does not need a palette
+entry of its own. Every stone and ground surface in Chapter 1 is now one of
+the three hexes the document names for them. What remains derived is only what
+the documented five genuinely cannot say: dead wood, canyon scrub, two river
+depths, and the town's stone and roofs seen from across the valley. Each is recorded in `src/art/palette.ts` and each is a
 candidate for the human to either bless or replace with a documented value —
 see the open item at the end of this file.
 
