@@ -166,13 +166,14 @@ Chapters are JSON. The engine reads them. No chapter-specific code.
   "gait": { "from": "light", "to": "light" },   // boy's gait states, blended by route progress
   "lighting": {
     "states": [
-      { "id": "morning", "sunDir": [-40, 30], "sun": "#F2DFAE",
+      { "id": "morning", "sunDir": [15, 30], "sun": "#F2DFAE",
         "ambient": "#CFE3E0", "fog": { "color": "#DCE8E4", "near": 40, "far": 140 } }
     ],
     "blendBy": "none"                            // "none" | "routeProgress" (the woods)
   },
   "environment": {
-    "terrain": "terrain/canyon.glb",
+    "terrain": "terrain/canyon.glb",             // collision, and the grey-box look
+    "artTerrain": "terrain/canyon-art.json",     // the chapter's LOOK (D19). absent -> grey box
     "surfaces": "terrain/canyon-surfaces.json",  // dust/gravel/sand regions for prints
     "props": [
       { "model": "props/fallen-pine.glb", "at": [62, 2, 14] }

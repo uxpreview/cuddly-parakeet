@@ -6,7 +6,12 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "chapter": "node tools/build-ch01.mjs",
+    "art": "node tools/shoot.mjs",
+    "red-audit": "node tools/red-audit.mjs",
+    "palette-check": "node tools/palette-check.mjs",
+    "gate1-check": "node tools/dev/gameplay-check.mjs"
   },
   "dependencies": {
     "@react-three/fiber": "^9.0.0",
@@ -20,6 +25,7 @@
     "@types/react-dom": "^19.0.0",
     "@types/three": "^0.172.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "playwright": "^1.62.1",
     "typescript": "^5.7.0",
     "vite": "^6.0.0"
   }

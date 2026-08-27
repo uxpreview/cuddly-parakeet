@@ -103,3 +103,207 @@ The ~36-minute chapter sum plus wandering is the 40–50 target. Edited:
 - **Audio direction:** no doc exists. Sound is half the navigation system;
   an audio page (bark sets, beds, spatialization, the 0.5–1.5 s answer
   timing) should be written before Gate 5.
+
+---
+
+Gate 2 rulings, 2026-08-27. D14 left the blob shadows and the print art without
+a visual spec because the spec they referenced lived in the superseded ink
+direction. Both are now defined, along with the character colours and the
+shading model art-direction.md implies but does not pin down.
+
+## D15 — The boy's palette outside the two documented garments
+
+`art-direction.md` names the shirt (`#3E6E8E`) and the shorts (`#8A5A3B`) and
+nothing else, but a boy needs skin, hair and shoes to exist. **Ruling:** skin
+`#D6A57A`, hair `#3E332C`, eyes `#2E2A26`, shoes `#6B5B4A`. All four sit in the
+warm-neutral band the two documented garments already imply, none is within
+forty degrees of red's hue band, and each survives all four chapter palettes,
+which is the stated test for his clothing. The face is built to the document's
+own recommendation — eyes only, no mouth — and that item stays **[OPEN]** and
+Ryan's to overrule. Recorded in `src/art/palette.ts`.
+
+## D15b — The derived palette is kept as small as the document allows
+
+Gate 2's first passes invented a colour wherever the world needed one: sand at
+the swimming hole, scree at the wall feet, a roof colour for the town. Between
+them the invented values were occupying more of the frame than the two hexes
+`art-direction.md` actually names, which is how a documented palette quietly
+becomes a suggestion. **Ruling:** a talus slope is broken limestone, a sand
+bar is the same pale gravel the path is, and wet stone is limestone that is
+wet — so `scree`, `sand` and `wetstone` are gone. Those surfaces render
+`#E3C08C` and `#EFE3C8`, wet stone as the limestone hex under a flat 0.78
+multiplier, because a material in a different state does not need a palette
+entry of its own. Every stone and ground surface in Chapter 1 is now one of
+the three hexes the document names for them. What remains derived is only what
+the documented five genuinely cannot say: dead wood, canyon scrub, two river
+depths, and the town's stone and roofs seen from across the valley. Each is recorded in `src/art/palette.ts` and each is a
+candidate for the human to either bless or replace with a documented value —
+see the open item at the end of this file.
+
+## D16 — Ramp shading, and what "the palette applied exactly" means
+
+`art-direction.md` asks for "flat or gradient-ramp shading" and one directional
+light plus ambient, but does not say what a surface's colour does as it turns
+away from the sun. **Ruling:** every material in the game is shaded by one
+two-stop ramp. A surface facing the key light renders its palette hex exactly;
+a surface facing away renders that hex slid toward the chapter's documented
+shadow-side colour by a per-material amount. Limestone slides the whole way,
+because the document names its shadow (`#9DA9A2`) exactly; ground, foliage,
+water and the characters keep most of their own hue so the chapter reads as one
+light rather than as two palettes.
+
+Nothing brightens past the documented value and nothing darkens past the
+documented shade, which is what makes "the palette applied exactly as
+documented" checkable rather than aspirational. Tone mapping is off and output
+is sRGB for the same reason: a documented hex must survive to the pixel.
+
+The ramp is continuous. No terminator step, no rim light, no cel band, no
+outline pass anywhere in the codebase.
+
+**Fog is the sky.** Each palette's fog colour is not a constant but the sky
+gradient evaluated along the view ray, so anything that fades out fades into
+precisely the sky behind it. Distance below the rim line gathers extra haze, so
+the town reads as *below and far* rather than merely far.
+
+**Terrain shadows are baked, not mapped.** The cross-sections are rasterised
+into a coarse heightfield at load and each point is marched toward the sun;
+three rays a few degrees apart give the soft edge. This is what makes "long
+soft shadows" true of the world and not only of the characters, at no per-frame
+cost and with no shadow map. A terrain shadow takes a surface most of the way
+to its shade value, never all the way: canyon floor in shadow is still
+limestone dust under a whole sky.
+
+## D17 — Blob shadows (closes half of D14)
+
+An ellipse on the ground under the character, and it is a *multiply*, not paint:
+it darkens whatever surface it lands on and keeps that surface's hue.
+
+- Painted in the chapter's documented shadow-side colour, never in black. A
+  shadow belongs to the palette like everything else.
+- Solid to 45% of the radius, then a smooth falloff to nothing at the rim.
+- Sized to the character's ground footprint x 1.35.
+- Stretched along the sun's ground bearing by `1 + 1.1 * cot(elevation)`, capped
+  at 2.4x, and pushed away from the sun by exactly the length the stretch added,
+  so the near end stays under the feet. A blob that translates as a whole reads
+  as a second object lying on the ground.
+- Core strength 0.55 for the boy, 0.50 for the dog.
+- No blob at all where the terrain shadow already covers the character: there is
+  no sun there to cast one.
+
+The stretch is the point. At Chapter 1's morning sun this produces the long soft
+shadows the palette section promises, from the ground up, with no shadow map
+anywhere in the game.
+
+## D18 — Print art (closes the other half of D14)
+
+Hand-drawn alpha decals, which `art-direction.md` allows as one of its handful of
+painted textures. Drawn procedurally so they are original to this game and so a
+surface change is a parameter rather than a re-export. Like the blob shadows they
+multiply, which is why a print on pale gravel and a print on wet stone are
+recognisably the same print in two different materials.
+
+- **Dog:** four toe ovals splayed around a larger heel pad, about 11 cm across,
+  strength 0.42.
+- **Boy:** a rounded sole — ball, heel, and a fainter waist between them, about
+  15 cm long, strength 0.26.
+- Both tinted with the chapter's shadow-side value. No outline, no second hue.
+- The dog's are the darker of the two on purpose. They are the trail the game is
+  asking the player to read, and the boy's must never compete with them.
+- Prints fade by losing strength and shrinking, never by turning grey. Lifetimes
+  stay owned by `game-design.md` per D6; this rules only on how they look.
+
+## D19 — `environment.artTerrain`, a schema extension for all chapters
+
+Gate 2 needs somewhere to put the look of a chapter without disturbing the
+collision and staging Gate 1 signed off. **Ruling:** the manifest gains
+`environment.artTerrain`, a sibling of `environment.terrain`. `terrain` stays
+what it was — the block list the engine builds collision from. `artTerrain` is
+the chapter's cross-sections, water reaches, scatter and what lies past the
+horizon. A chapter without the field renders as a grey box, which is what keeps
+the Gate 1 build alive as a debugging view (`?greybox` is not needed; simply
+omitting the field is the switch). Per the no-one-offs rule this is a schema
+change for all four chapters, edited into `game-design.md`.
+
+The engine lofts a cross-section along a centerline and stamps a small library
+of primitives. It knows nothing about canyons: where the canyon goes, how wide
+it is, how deep, and what stands beside it are all chapter data, emitted by
+`tools/build-ch01.mjs` from the same leg list the grey box came from.
+
+## D20 — Chapter 1's key light is azimuth +15, elevation 30
+
+`art-direction.md` specifies Chapter 1's palette and "long soft shadows" but no
+sun position; Gate 1's manifest carried a placeholder. **Ruling:** azimuth +15,
+elevation 30 degrees, and both numbers are load-bearing.
+
+(This entry first said +40. The value that shipped is +15, and the entry was
+wrong rather than the code: fifteen degrees is what puts the sun near enough to
+the canyon's axis that it still reaches down between the walls. Corrected here
+rather than left as a second source of truth.)
+
+Elevation 30 is where light clears the far terrace and reaches the canyon floor
+at this canyon's proportions. Below it the whole chapter plays in shade and the
+documented path value `#EFE3C8` never once appears on screen; well above it the
+shadows stop being long.
+
+The azimuth puts the sun over the low terraced bank rather than over the tall
+wall. From the other side nothing on the floor is ever lit, because a
+twenty-three metre cliff four metres away blocks any morning sun there is. From
+this side the tall wall's inward face takes the light, the terrace and the river
+sit in cool shade, and the wall throws its shadow the long way down the floor.
+
+The far bank is a terrace rather than a second cliff for the same reason, and
+because a river canyon really does cut one bank lower than the other.
+
+
+## D21 — The collar holds a floor of 2.5 pixels of projected radius
+
+`art-direction.md` spends the entire red rule on one object and states the
+payoff: "in every frame that contains the dog, the eye goes to the collar first,
+involuntarily." Modelled at a plausible 3.5 cm on a dog 60 cm tall, the collar
+measured four to nine pixels across at the distances Chapter 1 actually stages
+him at, and in a wide shot the only way to find him was to scan the frame for
+red numerically. That is the search mechanic failing, not a detail being small.
+
+**Ruling:** the collar is a BAND — an open cylinder sharing the neck's axis,
+with real width along it, so its silhouette is a ring from every angle including
+from behind, which is the angle the game shows most because he is ahead. And it
+never projects smaller than 2.5 px of radius: the vertex shader expands it about
+its own centre by whatever factor that floor requires, which is exactly 1 at any
+close range. Five pixels across is the smallest thing that survives the sampler
+as a coloured mark rather than as a tint on one grey pixel.
+
+Nothing else in the game gets this. It is a screen-space cheat, and it is
+justified for exactly one object because that object is the navigation system.
+
+## D22 — Every shading channel is flat per face
+
+`art-direction.md` asks for "low-poly geometry, flat or gradient-ramp shading"
+and says "flat shading exposes bad forms, so form is where the modeling effort
+goes". Through iteration 6 nothing in this scene was actually flat-shaded: the
+value mottling, the baked sun shadow and the baked sky visibility were all
+per-VERTEX, and a value that differs at the corners of a triangle is
+interpolated across it. Measured, that produced fifteen to twenty-one thousand
+unique colours per frame and a three-hundred-pixel sample of the nearest canyon
+wall with no seam anywhere in it.
+
+**Ruling:** mottle, sun occlusion and sky visibility are each evaluated once per
+face and written to all of that face's vertices. A polygon renders one colour.
+Three things follow and all three are accepted:
+
+- **Faces have to be small enough to shade with.** The loft's rungs are placed
+  where the canyon's shape changes, not where the shading needs them, so some
+  spans were eighteen metres. Wide spans are split until nothing exceeds 1.2 m.
+- **Shadow edges step at the size of the mesh.** That is the idiom, not a
+  defect. The per-face sun value is box filtered over the face's own footprint
+  so the step is a ramp across several faces rather than a binary flip.
+- **The baked shadow is weighted by how much the face is turned toward the
+  sun.** On a face already turned away the ray march is grazing — it skims the
+  surface it started on, over a heightfield of two-metre cells — and what it
+  returns there is noise, which under flat shading became a mosaic of tan and
+  grey blocks across the near cliff.
+
+The lit/shade ramp width also became per material. Terrain gets a narrow band,
+because a wide one on a gently curving loft is an airbrush that buries the
+facets. Characters keep a wider one, because a boy's head and a dog's barrel are
+a dozen polygons each and a closed band cuts a hard line across the curve — the
+crown becomes a hat brim and the flank becomes a saddle patch.
