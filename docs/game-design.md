@@ -172,7 +172,8 @@ Chapters are JSON. The engine reads them. No chapter-specific code.
     "blendBy": "none"                            // "none" | "routeProgress" (the woods)
   },
   "environment": {
-    "terrain": "terrain/canyon.glb",
+    "terrain": "terrain/canyon.glb",             // collision, and the grey-box look
+    "artTerrain": "terrain/canyon-art.json",     // the chapter's LOOK (D19). absent -> grey box
     "surfaces": "terrain/canyon-surfaces.json",  // dust/gravel/sand regions for prints
     "props": [
       { "model": "props/fallen-pine.glb", "at": [62, 2, 14] }

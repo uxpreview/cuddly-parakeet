@@ -1,4 +1,5 @@
 import type { ChapterManifest, GreyboxTerrain, PathFile } from './types'
+import type { ArtTerrain } from '../art/artTerrain'
 import { BlockIndex } from './terrain'
 import { Route, ProgressTracker } from './route'
 import { world } from './world'
@@ -17,6 +18,9 @@ export async function loadChapter(id: string): Promise<void> {
   const manifest = await fetchJson<ChapterManifest>(id + '.json')
 
   const terrain = await fetchJson<GreyboxTerrain>(manifest.environment.terrain)
+  const art = manifest.environment.artTerrain
+    ? await fetchJson<ArtTerrain>(manifest.environment.artTerrain)
+    : null
 
   // collect every path file the dog route references
   const pathRefs = new Set<string>()
@@ -33,6 +37,7 @@ export async function loadChapter(id: string): Promise<void> {
 
   world.manifest = manifest
   world.terrain = terrain
+  world.art = art
   world.blocks = new BlockIndex(terrain.blocks)
   world.paths = paths
   world.route = new Route(manifest.dogRoute, paths)

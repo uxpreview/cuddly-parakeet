@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import type { ChapterManifest, GreyboxTerrain, PathFile, TriggerDef } from './types'
+import type { ArtTerrain } from '../art/artTerrain'
 import { BlockIndex, type GroundSample } from './terrain'
 import { Route, ProgressTracker } from './route'
 
@@ -22,6 +23,7 @@ export const world = {
   startedAt: 0, // performance.now() when play began
   manifest: null as ChapterManifest | null,
   terrain: null as GreyboxTerrain | null,
+  art: null as ArtTerrain | null,
   blocks: null as BlockIndex | null,
   route: null as Route | null,
   paths: new Map<string, PathFile>(),

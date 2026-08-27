@@ -14,10 +14,20 @@ import { PerfProbe, PerfHudOverlay } from './components/PerfHud'
 import { Joystick } from './ui/Joystick'
 import { WhistleButton } from './ui/WhistleButton'
 import { Legend } from './ui/Legend'
+import { ArtBible } from './art/ArtBible'
 
 const CHAPTER = 'ch01-canyon'
 
 export function App() {
+  // Gate 2 lives at ?scene=art-bible: a static, posed scene sharing the
+  // chapter's data and none of its systems.
+  if (typeof location !== 'undefined' && location.search.includes('scene=art-bible')) {
+    return <ArtBible />
+  }
+  return <Game />
+}
+
+function Game() {
   const phase = useGame((s) => s.phase)
   const chapterTitle = useGame((s) => s.chapterTitle)
   const [error, setError] = useState<string | null>(null)

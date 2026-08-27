@@ -65,7 +65,10 @@ export interface ChapterManifest {
   gait: { from: string; to: string }
   lighting: { states: LightingState[]; blendBy: 'none' | 'routeProgress' }
   environment: {
-    terrain: string // .json greybox at Gate 1, .glb once art exists
+    terrain: string // grey-box block list: collision, and the Gate 1 look
+    // The chapter's look (Gate 2+). Kept apart from `terrain` so art can be
+    // replaced without touching collision or staging. Absent -> grey box.
+    artTerrain?: string
     surfaces?: string
     props?: { model: string; at: Vec3 }[]
   }
