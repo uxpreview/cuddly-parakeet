@@ -144,11 +144,19 @@ void main() {
   // hemisphere of light: an up-facing surface gets all of it, a vertical face
   // about two thirds, an underside almost none. This is the "plus ambient" of
   // "one directional light plus ambient", and it is what models the shadow side.
-  float sky = 0.62 + 0.38 * clamp(n.y * 0.62 + 0.44, 0.0, 1.0);
+  // Normalised so that a VERTICAL face in shade renders its shade colour
+  // exactly. That is the face art-direction.md is describing when it names
+  // limestone's shadow side #9DA9A2, so it is the one that has to measure
+  // right; up-facing shade lifts a little because it sees more sky, and
+  // undersides fall away because they see almost none.
+  // Nothing is LIFTED by the sky — a surface in shade renders its shade colour,
+  // which is the whole point of the documented shadow-side hex. Only what the
+  // sky cannot reach falls below it: undersides, overhangs, the backs of ledges.
+  float sky = 1.0 - 0.45 * clamp(-n.y, 0.0, 1.0);
   // Tinted toward the sky, not toward white. A neutral fill added to a
   // saturated albedo desaturates it, and the two most chroma-critical things in
   // the chapter — the pines and the collar — are exactly what that costs.
-  shade *= sky * mix(vec3(1.0), uSkyZenith * 1.35, 0.34);
+  shade *= sky * mix(vec3(1.0), uSkyZenith * 1.42, 0.22);
 
   // the ramp. one soft transition, widest on the shadow side so morning
   // shadows stay long and gentle
@@ -166,7 +174,7 @@ void main() {
   // all the way: the canyon floor in shadow is still limestone dust lit by a
   // whole sky, and crushing it to the shade colour is how a morning turns into
   // an overcast afternoon.
-  t = mix(t, t * 0.22, occ);
+  t = mix(t, t * 0.08, occ);
 
   vec3 col = mix(shade, base, t);
 
@@ -175,7 +183,7 @@ void main() {
   // walls and in the narrows, and it is the only thing in a chapter this
   // high-key that reaches the bottom of the value range.
   #ifdef USE_OCC_ATTR
-    col *= mix(0.66, 1.0, smoothstep(0.22, 0.78, vAo));
+    col *= mix(0.72, 1.0, smoothstep(0.2, 0.72, vAo));
   #endif
 
   // --- fog is the sky ------------------------------------------------------
@@ -290,7 +298,7 @@ export function makeRamp(opts: RampOptions = {}): THREE.ShaderMaterial {
       uHazeDepth: { value: opts.hazeDepth ?? 16 },
       uOpacity: { value: opts.opacity ?? 1 },
       uOcclusion: { value: opts.occlusion ?? 0 },
-      uShadeDrop: { value: opts.shadeDrop ?? 0.68 },
+      uShadeDrop: { value: opts.shadeDrop ?? 0.6 },
       uFlatten: { value: opts.flatten ?? 0 },
     },
   })

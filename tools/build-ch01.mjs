@@ -789,6 +789,17 @@ for (const leg of legs) {
       if (sIdx === 1 && r < 0.13) {
         put(leg.name, i, 'shoulder', 1, hash(i, 47) * 0.9, 'rock', 0.22 + hash(i, 49) * 0.32, i * 59)
       }
+      if (leg.ford) {
+        // The ford has to read as a PLACE you cross, not as two ponds either
+        // side of a path. Stepping stones through the shallows and a gravel bar
+        // at the near bank are what say "here, and here is how".
+        if (r < 0.42) {
+          put(leg.name, i, 'bed', nth, 0.06 + hash(i, sIdx * 5) * 0.3, 'rock', 0.3 + hash(i, sIdx * 9) * 0.34, i * 97 + sIdx)
+        }
+        if (r > 0.72) {
+          put(leg.name, i, 'bank', nth, hash(i, sIdx * 13) * 0.8, 'rock', 0.22 + hash(i, sIdx * 17) * 0.26, i * 101 + sIdx)
+        }
+      }
       if (kind === 'lowwall') {
         if (r < 0.22) put(leg.name, i, 'shelf', nth, hash(i, sIdx * 5) * 0.8, 'scrub', 0.5 + hash(i, sIdx * 9) * 0.5, i * 5 + sIdx)
         if (r > 0.9) put(leg.name, i, 'shelf', nth, hash(i, sIdx * 7) * 0.6, 'pine', 0.45 + hash(i, sIdx * 11) * 0.3, i * 23 + sIdx)

@@ -291,11 +291,13 @@ export function buildDog(pose: DogPose = DOG_LOOK_BACK, occlusion = 0): THREE.Gr
 
   // A real neck, angled up out of the shoulders. Without it the head is bolted
   // to the front of the barrel and the whole animal reads as a goat.
-  const NECK_Y = 0.5
-  const NECK_Z = 0.235
+  // A short thick neck. Long and slim reads as a whippet or a young deer; this
+  // dog is compact.
+  const NECK_Y = 0.475
+  const NECK_Z = 0.225
   const NECK_TILT = 0.62
   {
-    const neck = capsule(0.058, 0.11, 3, 8)
+    const neck = capsule(0.066, 0.075, 3, 8)
     place(neck, [0, 0, 0], [NECK_TILT, 0, 0])
     place(neck, [0, NECK_Y, NECK_Z])
     parts.push(paint(neck, coat, S))
@@ -306,7 +308,7 @@ export function buildDog(pose: DogPose = DOG_LOOK_BACK, occlusion = 0): THREE.Gr
 
   // head group: everything above the collar turns together
   const headParts: THREE.BufferGeometry[] = []
-  const skull = sphere(0.078, 9, 7)
+  const skull = sphere(0.086, 9, 7)
   skull.scale(1, 0.94, 1.05)
   headParts.push(paint(place(skull, [0, 0, 0]), coat, S))
   // A SHORT muzzle. The long one read as a snout, which is half of why the
@@ -331,7 +333,7 @@ export function buildDog(pose: DogPose = DOG_LOOK_BACK, occlusion = 0): THREE.Gr
   }
   const head = mergePainted(headParts)
   place(head, [0, 0, 0], [pose.headP, pose.headY, 0])
-  place(head, [0, NECK_Y + 0.115, NECK_Z + 0.075])
+  place(head, [0, NECK_Y + 0.1, NECK_Z + 0.062])
   parts.push(head)
 
   // Tail: a curved taper, not a segmented rod. Tail language is half of what
@@ -344,7 +346,7 @@ export function buildDog(pose: DogPose = DOG_LOOK_BACK, occlusion = 0): THREE.Gr
     let ang = pose.tailUp
     for (let i = 0; i < segs; i++) {
       const t = i / segs
-      const r = 0.028 * (1 - t * 0.55)
+      const r = 0.036 * (1 - t * 0.45)
       const len = 0.055
       const seg = capsule(r, len * 0.7, 2, 6)
       place(seg, [0, len / 2, 0])

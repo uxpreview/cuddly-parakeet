@@ -129,7 +129,11 @@ export const RED_WHITELIST = [DOG.collar.id, MAP.routeLine.id] as const
  */
 export const SHADOW_MIX = {
   limestone: 1.0,
-  ground: 0.32,
+  // Ground goes further toward the shadow key than anything else except
+  // limestone itself. Pale limestone dust in shade really does go cool grey,
+  // and the canyon floor is the largest surface in every frame: if its shade
+  // value is close to its lit value there is no shadow in the picture at all.
+  ground: 0.44,
   foliage: 0.24,
   water: 0.2,
   character: 0.18,
