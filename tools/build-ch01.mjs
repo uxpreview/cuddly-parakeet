@@ -243,7 +243,7 @@ for (const leg of legs) {
     return v - Math.floor(v)
   }
   for (let t = 0; t < 26; t++) {
-    const along = 62 + rand(t) * 46
+    const along = 44 + rand(t) * 40
     const side = (rand(t + 50) - 0.5) * 70
     const w = 3.5 + rand(t + 100) * 5
     const hgt = 3 + rand(t + 150) * 5
@@ -295,7 +295,7 @@ const rimWaitI = legAt('rim', 0.45)
 // The boy descends toward him in full view; at the authored approach the
 // staged almost plays, and the escape is a long visible trot down every
 // switchback — wide and beautiful, of sight not touch (D1).
-const nearMissI = legAt('sb1', 0.28)
+const nearMissI = legAt('sb1', 0.4)
 const exitI = legAt('sb3', 0.6)
 
 out('paths/dog-ch1-a.json', slice(boltStartI, hazard1I))
@@ -322,7 +322,7 @@ const manifest = {
         sunDir: [-40, 30],
         sun: '#F2DFAE',
         ambient: '#CFE3E0',
-        fog: { color: '#DCE8E4', near: 40, far: 140 },
+        fog: { color: '#DCE8E4', near: 40, far: 220 },
       },
     ],
     blendBy: 'none',
@@ -372,20 +372,34 @@ const manifest = {
     { id: 'ford-crossed', shape: 'box', at: pos(fordFarI + 1), size: [7, 4, 7] },
     { id: 'fallen-pine', shape: 'box', at: pos(anchors['log-near']), size: [10, 5, 10] },
     { id: 'log-crossed', shape: 'box', at: pos(logFarI + 1), size: [6, 4, 6] },
-    { id: 'rim-view', shape: 'box', at: pos(legAt('rim', 0.55)), size: [20, 7, 20] },
+    { id: 'rim-view', shape: 'box', at: pos(legAt('rim', 0.72)), size: [16, 7, 16] },
     { id: 'rim-gate', shape: 'box', at: pos(exitI), size: [8, 5, 8] },
   ],
   cameras: [
     (() => {
-      const i = legAt('rim', 0.55)
-      const s = S(i)
-      const back = 9
+      // The reveal must contain its three subjects at once: the descending
+      // switchbacks (middle band), the hazy town below (far band), sky above.
+      // Shot from above the rim's edge, aimed between the dog's hold and the
+      // town, with the rim wall behind the camera rather than in frame.
+      const edge = S(anchors['rim-end'])
+      // hang the camera out over the parapet (downhill) side so the rim's
+      // uphill wall stays behind it instead of filling the frame
+      const rlx = -Math.sin(edge.h)
+      const rlz = Math.cos(edge.h)
       const p = [
-        round(s.x - Math.cos(s.h) * back),
-        round(s.y + 5.5),
-        round(s.z - Math.sin(s.h) * back),
+        round(edge.x - Math.cos(edge.h) * 3 + rlx * 5.5),
+        round(edge.y + 7.5),
+        round(edge.z - Math.sin(edge.h) * 3 + rlz * 5.5),
       ]
-      const look = pos(anchors['route-end'], -8)
+      const dogHold = S(nearMissI)
+      const end = S(anchors['route-end'])
+      const townDir = [Math.cos(end.h), Math.sin(end.h)]
+      const town = [end.x + townDir[0] * 55, end.y - 18, end.z + townDir[1] * 55]
+      const look = [
+        round(dogHold.x * 0.55 + town[0] * 0.45),
+        round((dogHold.y + 0.4) * 0.55 + town[1] * 0.45),
+        round(dogHold.z * 0.55 + town[2] * 0.45),
+      ]
       return { id: 'town-reveal', trigger: 'rim-view', position: p, lookAt: look }
     })(),
   ],

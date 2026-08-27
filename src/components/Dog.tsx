@@ -420,7 +420,7 @@ export function Dog() {
           // gives them a generous beat, then breaks away along the escape.
           if (st.phase === 'nm-escape') {
             activity = 'near-miss-escape'
-            if (!st.escapeLookDone && st.s - rn.s0 >= 12) {
+            if (!st.escapeLookDone && st.s - rn.s0 >= 16) {
               st.escapeLookDone = true
               st.lookBackUntil = st.clock + 0.7 // moving look-back mid-escape
             }
@@ -442,7 +442,7 @@ export function Dog() {
             desiredHeading = toPlayerYaw
             if (st.phase === 'nm-beat') {
               lookTarget = 1 // the held beat, looking straight at the player
-              if (st.clock - st.phaseStart >= 0.7) {
+              if (st.clock - st.phaseStart >= 1.1) {
                 st.phase = 'nm-escape'
                 st.phaseStart = st.clock
                 st.escapeLookDone = false
