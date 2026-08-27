@@ -924,7 +924,11 @@ function blob(
   }
 }
 
-/** Limestone boulder: an irregular faceted lump, never a sphere. */
+/**
+ * Limestone boulder. Faceted, blocky, and only a third buried — most of one
+ * sunk into the ground leaves a flat grey plate lying on the surface, which
+ * reads as litter rather than as rock that fell off the wall above it.
+ */
 function boulderGeometry(): THREE.BufferGeometry {
   const mb = new MeshBuilder()
   const base = new THREE.IcosahedronGeometry(1, 0)
@@ -932,13 +936,24 @@ function boulderGeometry(): THREE.BufferGeometry {
   const v: THREE.Vector3[] = []
   for (let i = 0; i < p.count; i++) {
     const q = new THREE.Vector3().fromBufferAttribute(p, i)
-    const k = 0.62 + h1(Math.round(q.x * 97 + q.y * 31 + q.z * 13)) * 0.5
+    // pull each vertex toward one of three plane normals, so the lump comes out
+    // of the ground with flat quarry faces instead of as a smooth pebble
+    const k = 0.7 + h1(Math.round(q.x * 97 + q.y * 31 + q.z * 13)) * 0.55
     q.multiplyScalar(k)
-    q.y = q.y * 0.86 - 0.46 // squat, and sunk well into the ground it rests on
+    q.x = Math.round(q.x * 2.4) / 2.4
+    q.z = Math.round(q.z * 2.2) / 2.2
+    q.y = q.y * 0.82 - 0.24
     v.push(q)
   }
   for (let i = 0; i < v.length; i += 3) {
-    mb.tri(v[i], v[i + 1], v[i + 2], CH1.limestone.hex, SHADOW_MIX.limestone, 0.97 + h1(i) * 0.05)
+    mb.tri(
+      v[i],
+      v[i + 1],
+      v[i + 2],
+      CH1.limestone.hex,
+      SHADOW_MIX.limestone,
+      0.96 + h1(i) * 0.08,
+    )
   }
   base.dispose()
   return mb.geometry()

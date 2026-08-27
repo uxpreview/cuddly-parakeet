@@ -768,7 +768,7 @@ for (const leg of legs) {
           put(leg.name, i, 'rim', nth, hash(i, sIdx * 15) * 0.85, 'pine', 0.6 + hash(i, sIdx * 19) * 0.4, i * 13 + sIdx)
         }
         if (r > 0.78) {
-          put(leg.name, i, 'talus', nth, hash(i, sIdx * 11) * 0.9, 'rock', 0.55 + hash(i, sIdx * 13) * 1.0, i * 7 + sIdx)
+          put(leg.name, i, 'talus', nth, hash(i, sIdx * 11) * 0.9, 'rock', 0.75 + hash(i, sIdx * 13) * 1.2, i * 7 + sIdx)
         }
         if (r > 0.36 && r < 0.46) {
           put(leg.name, i, 'talus', nth, hash(i, sIdx * 21) * 0.5, 'scrub', 0.6 + hash(i, sIdx * 3) * 0.5, i * 11 + sIdx)
@@ -789,10 +789,10 @@ for (const leg of legs) {
         }
       }
       if (sIdx === 0 && r > 0.86) {
-        put(leg.name, i, 'shoulder', 0, hash(i, 41) * 0.9, 'rock', 0.22 + hash(i, 43) * 0.3, i * 53)
+        put(leg.name, i, 'shoulder', 0, hash(i, 41) * 0.9, 'rock', 0.34 + hash(i, 43) * 0.4, i * 53)
       }
       if (sIdx === 1 && r < 0.13) {
-        put(leg.name, i, 'shoulder', 1, hash(i, 47) * 0.9, 'rock', 0.22 + hash(i, 49) * 0.32, i * 59)
+        put(leg.name, i, 'shoulder', 1, hash(i, 47) * 0.9, 'rock', 0.34 + hash(i, 49) * 0.42, i * 59)
       }
       if (leg.ford) {
         // The ford has to read as a PLACE you cross, not as two ponds either
