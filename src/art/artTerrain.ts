@@ -461,7 +461,12 @@ class SunOcclusion {
    */
   /** skyView on a coarse world grid: the term is broad, the cache is cheap. */
   private skyCache = new Map<number, number>()
-  skyViewCached(x: number, y: number, z: number): number {
+  skyViewCached(x: number, y: number, z: number, nx = 0, nz = 0): number {
+    // Off the surface FIRST, then quantised — so the cache key is the point the
+    // rays actually start from and two neighbouring wall faces cannot land in
+    // different cells of a field that is only meaningful outside the wall.
+    x += nx * this.cell * 1.05
+    z += nz * this.cell * 1.05
     const gx = Math.round(x / 1.5)
     const gy = Math.round(y / 1.5)
     const gz = Math.round(z / 1.5)
@@ -473,6 +478,21 @@ class SunOcclusion {
     return v
   }
 
+  /**
+   * How much open sky a point sees. Same self-sampling trap as the sun march,
+   * and the same cure.
+   *
+   * A point ON a cliff face is inside the 2 m column that represents that
+   * cliff, so whether a given compass ray at t=1.2 m clears the wall or lands
+   * back in it depends on which side of a cell boundary the face centroid fell.
+   * Measured over the near wall in `prints`, where the baked sun occlusion is
+   * zero on every face: the sky term swung 0.144 to 0.577 between NEIGHBOURING
+   * unoccluded faces, a fourfold range, and the shader turns that into 31.8 L
+   * peak-to-peak on a cliff whose real form-shading spans an n-dot-sun range of
+   * 0.47. The value structure of the wall was being carried by a noise field
+   * rather than by the light — which is the "visible image textures" failure
+   * wearing a different channel.
+   */
   skyView(x: number, y: number, z: number): number {
     const N = 8
     let sum = 0
@@ -730,10 +750,29 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
   for (const leg of art.legs) {
     const a = leg.range[0]
     const b = leg.range[1]
+    // How many sub-faces a rung gap is split into is decided ONCE PER RUNG, from
+    // the widest gap that rung has anywhere along this leg.
+    //
+    // It used to be decided per sample from that sample's own gap, so where the
+    // canyon narrows or widens two adjacent strips could disagree — and a strip
+    // split into five meeting a strip split into six is a row of T-junctions.
+    // They show: 321 pixels of hairline seam in `vista-portrait`, single
+    // desaturated pixels on lit cliffs where the sky shows through the mesh
+    // (e.g. (154,210) measuring #D9D2B6 at 0.161 saturation between neighbours
+    // at 0.383). One count per rung means every strip shares its neighbours'
+    // vertices exactly.
+    const subForRung: number[] = []
+    for (let k = 0; k < leg.chain.length - 1; k++) {
+      let widest = 0
+      for (let i = a; i <= b; i++) {
+        const w = chainPoint(leg, i, k).distanceTo(chainPoint(leg, i, k + 1))
+        if (w > widest) widest = w
+      }
+      subForRung[k] = Math.max(1, Math.min(12, Math.ceil(widest / MAX_SPAN)))
+    }
     for (let i = a; i < b; i++) {
       for (let k = 0; k < leg.chain.length - 1; k++) {
-        const span = chainPoint(leg, i, k).distanceTo(chainPoint(leg, i, k + 1))
-        const sub = Math.max(1, Math.min(12, Math.ceil(span / MAX_SPAN)))
+        const sub = subForRung[k]
         for (let sIdx = 0; sIdx < sub; sIdx++) {
           const u0 = sIdx / sub
           const u1 = (sIdx + 1) / sub
@@ -787,7 +826,10 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
     d: THREE.Vector3,
   ): [number, number, number, number] {
     const p = centroid(a, b, c, d)
-    const v = shadow.skyViewCached(p.x, p.y + 0.25, p.z)
+    _n0.copy(b).sub(a)
+    _n1.copy(d).sub(a)
+    _n0.cross(_n1).normalize()
+    const v = shadow.skyViewCached(p.x, p.y + 0.25, p.z, _n0.x, _n0.z)
     return [v, v, v, v]
   }
 

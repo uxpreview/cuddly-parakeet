@@ -477,18 +477,24 @@ export function buildDog(pose: DogPose = DOG_LOOK_BACK, occlusion = 0): THREE.Gr
   // Painting it in the coat welds it to the skull; the white moves to the jaw
   // and the blaze, where a dog's white actually is.
   //
-  // The white of the jaw is the SAME loft, split along its own waist: the
-  // upper faces take the coat and the lower faces take the points. A separate
-  // white capsule slung under the snout is what produced the wedge in the
-  // judged render — narrower than the muzzle it was under, so it stuck out
-  // below it as its own object and carried the nose away from the head.
+  // NO WHITE ON THE FACE AT ALL. Splitting the loft along its own waist and
+  // painting the lower half in the points value was better than the capsule it
+  // replaced, but at reading distance it still resolved as a pale lens with a
+  // point at each end sitting where the mouth belongs — 21x8 px in
+  // dog-read-desktop, 44x17 in the portrait — and it read as a tusk. The coat
+  // carries the whole head; the white points live on the chest, the throat, the
+  // feet and the tail tip, which is where a dog's white actually is.
   {
+    // A STOP. The muzzle's first ring is set well inside the skull's outline
+    // and its own taper is gentle, so the profile BREAKS at the brow instead of
+    // running crown to chin as one convex curve — which is what "there is no
+    // muzzle" meant in the last verdict even though the geometry was there.
     const rings: [number, number, number][] = [
-      [0.046, 0.07, 0.062],
-      [0.098, 0.062, 0.054],
-      [0.146, 0.052, 0.044],
+      [0.03, 0.062, 0.056],
+      [0.092, 0.058, 0.05],
+      [0.152, 0.05, 0.042],
     ]
-    const AXIS_Y = -0.032
+    const AXIS_Y = -0.036
     const N = 8
     const rp = rings.map(([z, hw, hh]) => {
       const o: THREE.Vector3[] = []
@@ -506,49 +512,46 @@ export function buildDog(pose: DogPose = DOG_LOOK_BACK, occlusion = 0): THREE.Gr
         faces.push([rp[r][i], rp[r + 1][j], rp[r][j]])
       }
     }
-    const tip = new THREE.Vector3(0, AXIS_Y - 0.008, 0.176)
+    const tip = new THREE.Vector3(0, AXIS_Y - 0.006, 0.196)
     for (let i = 0; i < N; i++)
       faces.push([tip, rp[rp.length - 1][i], rp[rp.length - 1][(i + 1) % N]])
     // close the base, so the stop is a hard edge rather than an open tube
-    const base = new THREE.Vector3(0, AXIS_Y, 0.046)
+    const base = new THREE.Vector3(0, AXIS_Y, 0.03)
     for (let i = 0; i < N; i++) faces.push([base, rp[0][(i + 1) % N], rp[0][i]])
-    const half: [number[], number[]] = [[], []]
-    for (const f of faces) {
-      const below = (f[0].y + f[1].y + f[2].y) / 3 < AXIS_Y - 0.034 ? 1 : 0
-      for (const v of f) half[below].push(v.x, v.y, v.z)
-    }
-    for (const [i, hex] of [
-      [0, coat],
-      [1, pts],
-    ] as const) {
-      if (!half[i].length) continue
-      const g = new THREE.BufferGeometry()
-      g.setAttribute('position', new THREE.Float32BufferAttribute(half[i], 3))
-      headParts.push(paint(g, hex, S))
-    }
+    const pos: number[] = []
+    for (const f of faces) for (const v of f) pos.push(v.x, v.y, v.z)
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+    headParts.push(paint(g, coat, S))
   }
-  headParts.push(paint(place(sphere(0.017, 6, 5), [0, -0.044, 0.168]), DOG.nose.hex, 0.2))
+  headParts.push(paint(place(sphere(0.016, 6, 5), [0, -0.05, 0.19]), DOG.nose.hex, 0.2))
   // Ears: pointed, per art-direction.md, but SMALL, low and close together. The
   // previous pair stood 0.085 tall off a 0.076 skull, splayed wide off the
   // crown — that is a cat's ear set, and on a pale wedge head it was most of
   // why he read as one.
   for (const side of [1, -1]) {
-    const ear = cone(0.05, 0.084, 4)
-    ear.scale(1, 1, 0.6)
-    place(ear, [0, 0.038, 0])
-    place(ear, [0, 0, 0], [-0.12, side * 0.22, side * 0.36])
-    place(ear, [0.05 * side, 0.06, -0.002])
+    // Big, thick, and rooted on the SIDE of the skull.
+    //
+    // The pair before this stood 15 px above the crown on a 136 px head — 11%
+    // of head height — as flat blades meeting in a V on top of the skull, which
+    // is a cockerel's comb, not a dog's ears. A pointed ear is a third to a
+    // half of the head's height, it has a section, and it hangs off the temple.
+    const ear = cone(0.052, 0.108, 4)
+    ear.scale(1, 1, 0.72)
+    place(ear, [0, 0.05, 0])
+    place(ear, [0, 0, 0], [-0.1, side * 0.24, side * 0.24])
+    place(ear, [0.062 * side, 0.042, 0.004])
     headParts.push(paint(ear, coat, S))
   }
   {
     const brow = sphere(0.062, 7, 5)
-    brow.scale(1.32, 0.46, 0.78)
-    headParts.push(paint(place(brow, [0, 0.03, 0.05]), coat, S))
+    brow.scale(1.32, 0.44, 0.78)
+    headParts.push(paint(place(brow, [0, 0.042, 0.048]), coat, S))
   }
   for (const side of [1, -1]) {
-    const eye = sphere(0.016, 6, 5)
+    const eye = sphere(0.019, 6, 5)
     eye.scale(1, 1.05, 0.7)
-    headParts.push(paint(place(eye, [0.052 * side, 0.014, 0.07]), DOG.eyes.hex, 0.15))
+    headParts.push(paint(place(eye, [0.052 * side, 0.002, 0.072]), DOG.eyes.hex, 0.15))
   }
   const head = mergePainted(headParts)
   place(head, [0, 0, 0], [pose.headP, pose.headY, 0])
