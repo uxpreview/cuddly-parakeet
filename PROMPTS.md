@@ -21,9 +21,10 @@ this dog" moments) are still the human's to decide; do not resolve them
 silently in code. If a gate forces one, stop and ask.
 
 **Scaffold exists.** The Vite + React Three Fiber + Zustand project is already
-set up at the repo root with a placeholder scene, and the repo deploys to
-Vercel on push. Session 1 should build Gate 1 inside this scaffold, not
-re-create it.
+set up at the repo root with a placeholder scene. Session 1 should build
+Gate 1 inside this scaffold, not re-create it. Deployment: import
+`uxpreview/cuddly-parakeet` as a project on the Vercel team (one-time, from
+the dashboard); Vercel auto-detects Vite and deploys every push after that.
 
 **Mechanics reference, not style reference.** Two screenshots live in
 `docs/reference/` (`mechanics-reference-desktop.jpg`,
