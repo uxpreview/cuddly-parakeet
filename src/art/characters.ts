@@ -68,11 +68,19 @@ export const DOG_LOOK_BACK: DogPose = {
   legFR: -0.06,
   legBL: -0.04,
   legBR: 0.08,
-  // 77 degrees, shared between neck and head. At 103 the muzzle swung clear
-  // across the barrel and eclipsed the collar: a look-back has to read as a
-  // glance over the shoulder, not as a head screwed on backwards.
-  neckY: 0.5,
-  headY: 0.85,
+  // 63 degrees, shared between neck and head.
+  //
+  // At 103 the muzzle swung clear across the barrel and eclipsed the collar: a
+  // look-back has to read as a glance over the shoulder, not as a head screwed
+  // on backwards. At 77 it eclipsed nothing but pointed the snout straight at
+  // the `dog-read` camera, which sits where the boy's eyes are — so in the one
+  // frame named for reading him the muzzle was fully foreshortened and the nose
+  // sat outside the far eye. Re-aiming the camera to fix that cost the shot its
+  // composition: the boy left the picture and the trail slid to the frame edge.
+  // Turning his head a little less is the cheaper answer, and a glance is what
+  // a look-back is anyway.
+  neckY: 0.42,
+  headY: 0.68,
   headP: 0.1,
   // Carried at the croup, a hand above the topline. Higher than this and the
   // curve starts to hook over his back, which is a cat.
@@ -536,11 +544,15 @@ export function buildDog(pose: DogPose = DOG_LOOK_BACK, occlusion = 0): THREE.Gr
     // of head height — as flat blades meeting in a V on top of the skull, which
     // is a cockerel's comb, not a dog's ears. A pointed ear is a third to a
     // half of the head's height, it has a section, and it hangs off the temple.
-    const ear = cone(0.052, 0.108, 4)
+    const ear = cone(0.05, 0.108, 4)
     ear.scale(1, 1, 0.72)
     place(ear, [0, 0.05, 0])
-    place(ear, [0, 0, 0], [-0.1, side * 0.24, side * 0.24])
-    place(ear, [0.062 * side, 0.042, 0.004])
+    place(ear, [0, 0, 0], [-0.1, side * 0.24, side * 0.2])
+    // Set INTO the skull rather than onto it. Sitting proud, the base's outer
+    // corners cleared the skull's own outline and put two flanges on the
+    // silhouette — 10x7 and 8x19 px in dog-read-desktop — so the head had four
+    // points instead of two.
+    place(ear, [0.055 * side, 0.03, 0.002])
     headParts.push(paint(ear, coat, S))
   }
   {
@@ -667,7 +679,7 @@ export function buildDog(pose: DogPose = DOG_LOOK_BACK, occlusion = 0): THREE.Gr
     // because each vertex is then pushed a different distance along an axis
     // that is not the one it is a ring around.
     minScreenAxis: [COLLAR_AXIS.x, COLLAR_AXIS.y, COLLAR_AXIS.z],
-    minScreenWidthPx: 1.3,
+    minScreenWidthPx: 1.1,
     side: THREE.DoubleSide,
   })
   collarMat.name = DOG.collar.id

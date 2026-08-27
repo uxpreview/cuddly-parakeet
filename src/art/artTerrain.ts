@@ -719,14 +719,35 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
     // perpendicular to the span, inside the cross-section plane
     const px = -_un.y / spanLen
     const py = Math.hypot(_un.x, _un.z) / spanLen
-    // Bedding: quantised, so the relief is ledges rather than a ripple, and
-    // keyed on the sub-vertex's own place so no two are alike.
-    const n = Math.round(vnoise(i / 5.2 + k * 3.7 + u * 6.1, k * 17 + 5) * 2.5) / 2.5
-    // Kept small. Under a nearly-closed terminator every extra degree of tilt
-    // flips a whole face between the lit hex and the shade hex, so a bedding
-    // amplitude that looked like relief under a soft ramp came out as a
-    // two-tone mosaic under a hard one — pixel-art camouflage, not limestone.
-    const amp = Math.min(spanLen * 0.011, 0.1)
+    // Bedding: quantised into ledges, keyed on the position UP the rung — which
+    // on a wall is height — with only a slow wander along the run.
+    //
+    // It used to vary with the sample index as fast as it varied with height,
+    // which is not bedding, it is lumpiness: strata are horizontal, and a wall
+    // whose relief changes every metre and a half along its run has none. The
+    // wander keeps a ledge from being a ruled line for a hundred metres.
+    const wander = vnoise(i / 24, k * 13 + 3) * 0.4
+    const n = Math.round(vnoise(k * 3.7 + u * 7.5 + wander, k * 17 + 5) * 2.5) / 2.5
+    // Five times what it was, ON STEEP RUNGS ONLY.
+    //
+    // It was capped at 10 cm because under a nearly-closed terminator every
+    // extra degree of tilt flipped a whole face between the lit hex and the
+    // shade hex, and relief became a two-tone mosaic. That is no longer how the
+    // lit side shades: a face raking away from the key light now loses value
+    // gradually rather than falling off a cliff, so tilt reads as modelling.
+    // At 10 cm on a twenty-metre wall there was nothing to model — the near
+    // cliff in hero rendered as one airbrushed sheet of #E3C08C with no facet
+    // visible in three hundred pixels, which is the same failure the ramp and
+    // the false shadow had each produced in turn, arrived at a third way.
+    //
+    // But bedding is a CLIFF's relief, and applied to level ground it is
+    // potholes: at half a metre the riverbed rose through the water surface and
+    // put a gravel spit down the middle of the channel in vista. So the
+    // amplitude follows how steep the rung is — full on a wall, nothing on a
+    // riverbed, and the terraces in between get a little.
+    const steep = Math.abs(_un.y) / spanLen
+    const sm = Math.max(0, Math.min(1, (steep - 0.3) / 0.4))
+    const amp = Math.min(spanLen * 0.05, 0.5) * sm * sm * (3 - 2 * sm)
     const horiz = Math.hypot(_un.x, _un.z) || 1
     out.x += (_un.x / horiz) * px * n * amp
     out.z += (_un.z / horiz) * px * n * amp
