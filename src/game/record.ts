@@ -26,6 +26,12 @@ export interface RecProbe {
   perf: { drawCalls: number; triangles: number }
   /** The dog in SCREEN space: x, y, and his projected height in pixels. */
   dogScreen: [number, number, number]
+  /**
+   * The boy the same way. The two together are what says whether the frame has
+   * them stacked into one shape: the Gate 2 carried item was the dog standing on
+   * the boy's head, and it is measurable rather than a matter of taste.
+   */
+  boyScreen: [number, number, number]
   /** 1 on a frame where the harness teleported somebody. Not a game frame. */
   staged?: number
   /** 1 while a pose overrides the dog's legs, so the plan does not own them. */
@@ -111,20 +117,21 @@ const UP = new THREE.Vector3(0, 1, 0)
  * it where to crop.
  */
 const _sp = new THREE.Vector3()
-function dogOnScreen(): [number, number, number] {
+function onScreen(at: THREE.Vector3, tall: number): [number, number, number] {
   const cam = (window as unknown as { __cam?: THREE.PerspectiveCamera }).__cam
   if (!cam) return [0, 0, 0]
   const w = window.innerWidth
   const h = window.innerHeight
-  _sp.copy(world.dog.pos).project(cam)
+  _sp.copy(at).project(cam)
   const x = ((_sp.x + 1) / 2) * w
   const y = ((1 - _sp.y) / 2) * h
-  _sp.copy(world.dog.pos)
-  _sp.y += 0.74
+  _sp.copy(at)
+  _sp.y += tall
   _sp.project(cam)
   const top = ((1 - _sp.y) / 2) * h
   return [Math.round(x), Math.round(y), Math.max(1, Math.round(y - top))]
 }
+const _bp = new THREE.Vector3()
 
 export function installRecorder(seed: number): void {
   beginRecording(seed)
@@ -254,7 +261,11 @@ export function installRecorder(seed: number): void {
           answerSeq: world.whistle.answerSeq,
         },
         perf: { drawCalls: perfStats.drawCalls, triangles: perfStats.triangles },
-        dogScreen: dogOnScreen(),
+        dogScreen: onScreen(world.dog.pos, 0.74),
+        boyScreen: onScreen(
+          _bp.set(world.player.pos.x, world.player.visualY, world.player.pos.z),
+          1.36,
+        ),
         printsLaid: drainPrintLog(),
         ...recFrame,
       }
