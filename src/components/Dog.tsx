@@ -553,7 +553,6 @@ export function Dog() {
         case 'look-back': {
           // Story rule 3, as an authored beat with three visible variants.
           activity = 'look-back'
-          _pos.copy(rn.points[0])
           if (!st.lbPicked) {
             st.lbPicked = true
             st.lbVariant = st.lbCount % 3
@@ -562,7 +561,23 @@ export function Dog() {
           }
           const v = LOOK_BACKS[st.lbVariant]
           const t = st.clock - st.nodeStart
-          route.directionAt(rn.s0, _dir)
+          // He carries the variant's own pace through the node instead of being
+          // pinned to its first point.
+          //
+          // Pinning meant all three variants played from a dead stop, so the
+          // one thing that tells them apart at this size -- whether his LEGS
+          // are still going -- was thrown away exactly where the chapter stages
+          // the beat on purpose. A is a glance without breaking stride; it has
+          // to actually not break stride.
+          // Not clamped to rn.s1: node 4 is a POINT node, so it has no arc
+          // length of its own to walk along, and the route's parameter is
+          // continuous across nodes. advance() takes st.s forward with
+          // Math.max, so walking on through costs nothing and snaps nothing.
+          const sp = pace(v.speed)
+          st.s = Math.min(st.s + sp * dt, route.total)
+          route.pointAt(st.s, _pos)
+          moveV = dt > 0 ? sp : 0
+          route.directionAt(st.s, _dir)
           desiredHeading = Math.atan2(_dir.x, _dir.z)
           lookTarget = 1
           // The turn eases in and back out across the beat rather than snapping

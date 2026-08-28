@@ -378,28 +378,6 @@ export function Player() {
       0,
       rest2.shoulderR.z + armOut,
     )
-    // What a camera behind him can see of that: the hands' excursion ACROSS his
-    // body, measured in his own frame rather than argued about.
-    if (isRecording()) {
-      rig.group.updateMatrixWorld(true)
-      const cs = Math.cos(-heading)
-      const sn = Math.sin(-heading)
-      const arm = (name: string) => {
-        rig.joints[name].getWorldPosition(_hand)
-        const dx = _hand.x - pos.x
-        const dz = _hand.z - pos.z
-        return { across: dx * cs - dz * sn, ahead: dx * sn + dz * cs }
-      }
-      const l = arm('elbowL')
-      const r = arm('elbowR')
-      recFrame.boyArms = {
-        acrossL: +l.across.toFixed(4),
-        acrossR: +r.across.toFixed(4),
-        aheadL: +l.ahead.toFixed(4),
-        aheadR: +r.ahead.toFixed(4),
-      }
-    }
-
     // The forearm trails the upper arm: an arm swinging as one stick is a
     // pendulum, and a walking child's elbow is always a little bent.
     rig.joints.elbowL.rotation.x = -0.32 - Math.max(0, armSwing) * 0.55
@@ -420,15 +398,48 @@ export function Player() {
       // up fast, held, down slow: the shape of drawing breath and letting go
       const k = wt < 0.22 ? wt / 0.22 : wt < 0.62 ? 1 : 1 - (wt - 0.62) / 0.38
       const e = k * k * (3 - 2 * k)
+      // The elbow goes OUT, not forward. Raising the arm in front of him puts
+      // the whole gesture behind his own torso from a camera sitting directly
+      // behind him, which is where this game's camera lives: muted, the player
+      // saw a boy nod backwards and nothing else. A hand to the mouth with the
+      // elbow winged out to the side is both what whistling looks like and the
+      // version of it that has a silhouette from behind.
       rig.joints.shoulderR.rotation.set(
-        rest2.shoulderR.x - 1.15 * e,
+        rest2.shoulderR.x - 0.82 * e,
         0.35 * e,
-        rest2.shoulderR.z + 0.55 * e,
+        rest2.shoulderR.z - 1.05 * e,
       )
       rig.joints.elbowR.rotation.x = -0.32 - 1.5 * e
+      rig.joints.elbowR.rotation.z = 0.75 * e
       head.rotation.x -= 0.34 * e
       chest.rotation.x -= 0.16 * e
       rig.group.position.y += 0.022 * e
+    }
+
+    // What a camera behind him can see of that: the hands' excursion ACROSS his
+    // body, measured in his own frame rather than argued about.
+    if (isRecording()) {
+      rig.group.updateMatrixWorld(true)
+      // Forward is (sin h, cos h); right of it is (cos h, -sin h). Getting this
+      // backwards reads as a reflection rather than a rotation and mixes the two
+      // axes into each other, which is what it did the first time: the lateral
+      // swing measured 14 mm when the geometry says 48.
+      const ch = Math.cos(heading)
+      const sh = Math.sin(heading)
+      const arm = (name: string) => {
+        rig.joints[name].getWorldPosition(_hand)
+        const dx = _hand.x - pos.x
+        const dz = _hand.z - pos.z
+        return { across: dx * ch - dz * sh, ahead: dx * sh + dz * ch }
+      }
+      const l = arm('elbowL')
+      const r = arm('elbowR')
+      recFrame.boyArms = {
+        acrossL: +l.across.toFixed(4),
+        acrossR: +r.across.toFixed(4),
+        aheadL: +l.ahead.toFixed(4),
+        aheadR: +r.ahead.toFixed(4),
+      }
     }
 
     // Where the MESH's soles ended up, not where the plan put them. The plan

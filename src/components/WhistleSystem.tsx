@@ -68,9 +68,35 @@ const BIRD_SPAN = 0.84
  * at thirty metres a real bird is four pixels. Four pixels of anything is dirt
  * on the lens. Up close the factor is exactly 1.
  */
-const BIRD_MIN_PX = 11
+const BIRD_MIN_PX = 16
 
 const _wp = new THREE.Vector3()
+
+// Dust is soft or it is a tile.
+//
+// The puff was a PlaneGeometry with a flat MeshBasicMaterial on it, which draws
+// a hard-edged square lying on the ground -- at the size dust has to be to
+// register at all, an obvious grey slab under the dog. A radial falloff is the
+// whole difference between a cloud and a decal.
+const PUFF_VERT = `
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`
+const PUFF_FRAG = `
+uniform vec3 uColor;
+uniform float uOpacity;
+varying vec2 vUv;
+void main() {
+  float r = length(vUv * 2.0 - 1.0);
+  // soft all the way in: dust has no core
+  float a = (1.0 - smoothstep(0.0, 1.0, r)) * uOpacity;
+  if (a <= 0.004) discard;
+  gl_FragColor = vec4(uColor, a);
+}
+`
 
 /**
  * One bird: a shallow V of two triangles, seen as a silhouette. Nothing else is
@@ -81,13 +107,35 @@ const _wp = new THREE.Vector3()
 function birdGeometry(): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry()
   const S = 0.42 // wing half-span, metres
-  const C = 0.1 // body half-length
-  // left wing, right wing, and a body sliver between them
-  const v = [
-    0, 0, C, -S, 0.12 * S, -0.35 * C, -0.42 * S, 0, 0.55 * C,
-    0, 0, C, 0.42 * S, 0, 0.55 * C, S, 0.12 * S, -0.35 * C,
-    0, 0, C, -0.42 * S, 0, 0.55 * C, 0.42 * S, 0, 0.55 * C,
+  const C = 0.2 // body half-length
+  const T = 0.42 // chord kept at the wing TIP, as a fraction of the root's
+  // Span is not the same thing as INK.
+  //
+  // The first shape was a V of near-zero-chord slivers: measured, it drew at 40
+  // pixels of span and about two pixels of mark, which at a glance is dirt on
+  // the lens rather than a bird. It also tapered to a point, so the outer third
+  // of every wing was a sub-pixel wedge that antialiased away entirely.
+  //
+  // So each wing is a quad -- root chord, tip chord, both real -- and the body
+  // between them is a solid sliver. Same silhouette, an order of magnitude more
+  // of it. At the 16 px floor below, the wing chord lands around 3 px.
+  const wing = (side: number) => {
+    const x0 = 0.34 * S * side
+    const x1 = S * side
+    // root and tip, each with a leading and trailing edge
+    const rl = [x0, 0, C]
+    const rt = [x0, 0, -0.55 * C]
+    const tl = [x1, 0.12 * S, C * T]
+    const tt = [x1, 0.12 * S, -0.55 * C * T]
+    return side > 0
+      ? [...rl, ...tl, ...tt, ...rl, ...tt, ...rt]
+      : [...rl, ...tt, ...tl, ...rl, ...rt, ...tt]
+  }
+  const body = [
+    -0.34 * S, 0, C, 0.34 * S, 0, C, 0.34 * S, 0, -0.55 * C,
+    -0.34 * S, 0, C, 0.34 * S, 0, -0.55 * C, -0.34 * S, 0, -0.55 * C,
   ]
+  const v = [...body, ...wing(-1), ...wing(1)]
   g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3))
   g.computeVertexNormals()
   return g
@@ -130,7 +178,9 @@ function rollCue(): { birds: Bird[]; puffs: Puff[] } {
       // that hides it. From the following camera the pines top out around ten
       // metres above the canyon floor.
       rise: 11 + rand() * 8,
-      drift: 5 + rand() * 7,
+      // Not so far that they stop saying WHERE. The answer gives a direction,
+      // so a bird that has drifted twelve metres off him is pointing at nothing.
+      drift: 3 + rand() * 5,
       flap: 7 + rand() * 5,
       phase: rand() * Math.PI * 2,
       delay: rand() * 0.22,
@@ -141,10 +191,14 @@ function rollCue(): { birds: Bird[]; puffs: Puff[] } {
   for (let i = 0; i < PUFFS_PER_CUE; i++) {
     puffs.push({
       az: rand() * Math.PI * 2,
-      reach: 0.3 + rand() * 0.9,
-      rise: 0.35 + rand() * 0.5,
+      // Bigger and thrown wider than the first pass. A puff the size of the
+      // dog's own foot, in the value of the ground it came off, was invisible
+      // twice over -- and it is the half of the correlate that says WHERE, at
+      // his feet, rather than only that something happened.
+      reach: 0.5 + rand() * 1.3,
+      rise: 0.45 + rand() * 0.7,
       delay: rand() * 0.12,
-      size: 0.5 + rand() * 0.5,
+      size: 1.0 + rand() * 0.9,
     })
   }
   return { birds, puffs }
@@ -198,10 +252,14 @@ export function WhistleCues() {
       puff: Array.from(
         { length: MAX_CUES },
         () =>
-          new THREE.MeshBasicMaterial({
-            color: CH1.limestoneShadow.hex,
+          new THREE.ShaderMaterial({
+            vertexShader: PUFF_VERT,
+            fragmentShader: PUFF_FRAG,
+            uniforms: {
+              uColor: { value: new THREE.Color(CH1.limestoneShadow.hex) },
+              uOpacity: { value: 0 },
+            },
             transparent: true,
-            opacity: 0,
             depthWrite: false,
             side: THREE.DoubleSide,
           }),
@@ -256,7 +314,7 @@ export function WhistleCues() {
       }
       group.visible = true
       mats.bird[si].opacity = e < 0.62 ? 0.95 : 0.95 * (1 - (e - 0.62) / 0.38)
-      mats.puff[si].opacity = 0.5 * Math.max(0, 1 - e / 0.55)
+      mats.puff[si].uniforms.uOpacity.value = 0.62 * Math.max(0, 1 - e / 0.55)
 
       for (let bi = 0; bi < BIRDS_PER_CUE; bi++) {
         const mesh = birdMeshes.current[si * BIRDS_PER_CUE + bi]
@@ -302,7 +360,7 @@ export function WhistleCues() {
         const s = p.size * (0.35 + u * 1.5)
         mesh.position.set(Math.cos(p.az) * p.reach * u, 0.05 + p.rise * u, Math.sin(p.az) * p.reach * u)
         mesh.scale.set(s, 1, s)
-        if (u > 0 && mats.puff[si].opacity > 0.01) livePuffs++
+        if (u > 0 && mats.puff[si].uniforms.uOpacity.value > 0.01) livePuffs++
       }
     }
 

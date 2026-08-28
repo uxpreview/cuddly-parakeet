@@ -43,17 +43,46 @@ for (let i = 0; i < 45; i++) await call('step', 1000 / HZ)
 await call('whistle')
 let answerAt = null
 const rows = []
+const SHOT = process.env.SHOT
 for (let f = 0; f < 260; f++) {
   const p = await call('frame', 1, 1000 / HZ)
+  // Save the frame at a fixed lag after the answer, so the cue can be LOOKED at
+  // and not only counted. The probe counts geometry it has positioned; whether
+  // any of it reached the screen is a different question.
+  // The PRESS reads on the boy; the answer reads on the dog. Both have to work
+  // with the sound off, so both get a frame.
+  if (process.env.PRESSSHOT && f === 24) {
+    const png = await page.evaluate(() => document.querySelector('canvas').toDataURL('image/png'))
+    ;(await import('node:fs')).writeFileSync(process.env.PRESSSHOT, Buffer.from(png.split(',')[1], 'base64'))
+    console.log('wrote', process.env.PRESSSHOT)
+  }
+  if (SHOT && answerAt !== null && Math.abs(p.t - answerAt - 0.6) < 1 / HZ / 2) {
+    const png = await page.evaluate(() => document.querySelector('canvas').toDataURL('image/png'))
+    ;(await import('node:fs')).writeFileSync(SHOT, Buffer.from(png.split(',')[1], 'base64'))
+    console.log('wrote', SHOT)
+  }
   if (p.whistle.answerSeq > 0 && answerAt === null) answerAt = p.t
   rows.push({
     t: p.t,
     since: answerAt === null ? null : p.t - answerAt,
     apart: Math.hypot(p.dog.pos[0] - p.player.pos[0], p.dog.pos[2] - p.player.pos[2]),
     cue: p.cue,
+    boyArms: p.boyArms,
   })
 }
 
+{
+  const pr = rows.slice(0, 60).filter((r) => r.cue !== undefined)
+  const A = rows.slice(0, 60).map((r) => r.boyArms).filter(Boolean)
+  if (A.length) {
+    const aR = A.map((a) => a.acrossR)
+    const aL = A.map((a) => a.acrossL)
+    console.log(
+      `press window: right hand across ${(Math.min(...aR) * 100).toFixed(1)} to ${(Math.max(...aR) * 100).toFixed(1)} cm, left ${(Math.min(...aL) * 100).toFixed(1)} to ${(Math.max(...aL) * 100).toFixed(1)} cm`,
+    )
+  }
+  void pr
+}
 if (answerAt === null) {
   console.log('the answer never fired')
 } else {
