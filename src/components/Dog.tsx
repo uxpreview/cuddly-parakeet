@@ -34,7 +34,14 @@ const CATCH_DIST = 12 // straight-line distance that counts as "caught up"
 /** How far off the route line he waits, in metres. See `asideDir`. */
 const WAIT_ASIDE = 0.95
 /** How far off square a waiting dog sits, so he is seen in three-quarter. */
-const WAIT_QUARTER = 0.62
+// 0.95 rad, not 0.62. At 0.62 the measured off-rear angle came out 49-68 deg
+// and the tail was still inside the body's own silhouette from behind; the one
+// stretch in four takes where it reads as an animal sits past 60. This puts him
+// around 70-80 deg off the rear axis, which is where the hindquarters stop
+// covering the tail.
+const WAIT_QUARTER = 0.95
+/** Closest two prints from the SAME foot may be, in metres. See the print loop. */
+const PRINT_APART = 0.11
 /** And how fast he steps on and off that verge. A dog's sidestep, not a jump. */
 const ASIDE_RATE = 0.55
 /**
@@ -240,6 +247,7 @@ interface DogState {
   aside: number
   asideSide: number
   weaveMix: number
+  lastPrint: THREE.Vector3[]
   prevLookTarget: number
   lookRefractoryUntil: number
   // idle glances at the player
@@ -297,6 +305,12 @@ function makeState(): DogState {
     aside: 0,
     asideSide: 0,
     weaveMix: 0,
+    lastPrint: [
+      new THREE.Vector3(),
+      new THREE.Vector3(),
+      new THREE.Vector3(),
+      new THREE.Vector3(),
+    ],
     prevLookTarget: 0,
     lookRefractoryUntil: 0,
     nextGlanceAt: 3,
@@ -975,7 +989,17 @@ export function Dog() {
     }
 
     const frozen = activity === 'stare' // exit hold: rigid, tail still, head fixed
-    const sitting = st.sit > 0.02 || st.bow > 0.02
+    // An authored hold owns the legs too, sitting or not.
+    //
+    // The near-miss hold stands rather than sits, so for its first eight seconds
+    // `sitting` was false, the planner was live, and the stand-still catch-up
+    // stepped his feet in place: 33 plants in 9.8 s at a dead stop, 16 of them
+    // inside the same 10 cm. Every one laid a pawprint, the print decals
+    // multiply, and 0.65^16 is 0.001 -- which is the pure-black bar the critic
+    // has been reporting under him for four iterations. He was a statue that
+    // shuffled, and the shuffle was drawing a hole in the ground.
+    const sitting =
+      st.sit > 0.02 || st.bow > 0.02 || activity === 'near-miss-hold'
 
     // The bark-bounce: two quick hops off the front, which is what a dog
     // actually does when he answers. It is cosmetic and never touches the route.
@@ -1017,8 +1041,16 @@ export function Dog() {
       // is what the animal actually does.
       for (let i = 0; i < gait.feet.length; i++) {
         const f = gait.feet[i]
-        if (f.justPlanted && DOG_LEGS[i][0] === 'f')
-          pushPrint('dog', f.pos.x, f.pos.y, f.pos.z, f.heading)
+        if (!f.justPlanted || DOG_LEGS[i][0] !== 'f') continue
+        // A foot put back down where it already was does not make a second
+        // print. The decals multiply, so a stack of them goes to black rather
+        // than to "darker" -- this is the guard that stops any future
+        // stand-still shuffle from drawing a hole, whatever causes it.
+        const last = st.lastPrint[i]
+        if (last.lengthSq() > 0 && last.distanceToSquared(f.pos) < PRINT_APART * PRINT_APART)
+          continue
+        last.copy(f.pos)
+        pushPrint('dog', f.pos.x, f.pos.y, f.pos.z, f.heading)
       }
     }
 

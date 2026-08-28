@@ -68,7 +68,7 @@ const BIRD_SPAN = 0.84
  * at thirty metres a real bird is four pixels. Four pixels of anything is dirt
  * on the lens. Up close the factor is exactly 1.
  */
-const BIRD_MIN_PX = 10
+const BIRD_MIN_PX = 17
 /**
  * And never wider than the dog they are answering for. Birds bigger than the
  * animal, hovering dead centre above his exact position, are not a correlate --
@@ -377,9 +377,20 @@ export function WhistleCues() {
           _dp.copy(world.dog.pos)
           const dogDist = Math.max(_dp.distanceTo(state.camera.position), 0.01)
           const dogPx = 0.74 / dogDist / perPx
+          // The FLOOR wins, always. The fraction only ever trims him down when
+          // he is already big.
+          //
+          // Written as max(FLOOR, dogPx * frac) the two collided at range: at a
+          // 15 px dog the cap landed on 10 px and so did the floor, so the
+          // correlate was smallest exactly where the dog is hardest to see --
+          // the opposite sign from D21, which is quoted three lines above this.
+          // Measured at the designed 20 m lead the birds drew 3x4 and 5x3 px and
+          // the answer could not be seen at all. A floor that scales with the
+          // thing it is compensating for is not a floor.
           const capPx = Math.max(BIRD_MIN_PX, dogPx * BIRD_MAX_FRAC)
-          let k = px < BIRD_MIN_PX ? BIRD_MIN_PX / Math.max(px, 0.01) : 1
-          if (px * k > capPx) k = capPx / Math.max(px, 0.01)
+          let k = 1
+          if (px < BIRD_MIN_PX) k = BIRD_MIN_PX / Math.max(px, 0.01)
+          else if (px > capPx) k = capPx / Math.max(px, 0.01)
           mesh.scale.setScalar(k)
           if (px * k > maxPx) maxPx = px * k
         }

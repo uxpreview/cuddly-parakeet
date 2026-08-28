@@ -664,7 +664,14 @@ export function dogRigDef(): RigDef {
   // white point on the tip. Three segments, so a sweep travels down it instead
   // of the whole thing waving as one stick.
   for (let i = 0; i < 3; i++) {
-    const r = 0.054 * (1 - (i / 3) * 0.3)
+    // Slimmer, and it matters more than the length did.
+    //
+    // Iteration 4 answered "the tail cannot be found" by thickening it, which
+    // is the wrong axis: at radius 0.054 over 0.255 m the finished tail was
+    // 2.4:1 length to width where a dog's is nearer 8:1, so every capsule was
+    // wider than it was long and the thing rendered as a triangular fin. Length
+    // it already has; what it needed was to stop reading as a cone.
+    const r = 0.032 * (1 - (i / 3) * 0.34)
     const seg = capsule(r, D.tailSeg * 0.75, 2, 6)
     add('tail' + (i + 1), paint(place(seg, [0, D.tailSeg / 2, 0]), i === 2 ? pts : coat, S))
   }
