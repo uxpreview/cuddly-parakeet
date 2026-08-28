@@ -780,17 +780,25 @@ export const BOY_GAIT = {
   /**
    * The furthest the hip may fall below full leg extension.
    *
-   * 0.055, not 0.12. A boy's legs are exactly as long as his hip is high --
-   * measured, standing slack 0.0000 m -- which is correct anatomy and means the
-   * support solve is ALWAYS working against full extension. Every stance width
-   * therefore asks the body down, and the budget here is what stops that
-   * becoming a squat. At 0.12 the stop was spending its whole 0.8 s of closing
-   * step 120 mm into the ground and then popping back out, which is a curtsey
-   * at the end of every walk and a camera jolt inside the settle beat. At 0.055
-   * the mid-stride bob is untouched (it asks for 44 mm) and the stop's dip is
-   * a dip.
+   * A boy's legs are exactly as long as his hip is high -- measured, standing
+   * slack 0.0000 m -- which is correct anatomy and means the support solve is
+   * ALWAYS working against full extension. Every stance width therefore asks
+   * the body down, and this budget is how far it may go.
+   *
+   * It has to be at least what the STRIDE asks for, and the stride asks for a
+   * lot: at mid-stance the foot sits about 0.26 m from its hip, so the leg can
+   * only give sqrt(0.43^2 - 0.26^2) = 0.343 m of height and the hip must drop
+   * 87 mm to stay on it. Cutting this to 0.055 to tidy up the settle starved
+   * the walk instead -- the solve saturated at the floor for the whole of every
+   * left stance and dragged the sole 377 mm off its own plant, which the gait
+   * instrument reported as 293 mm of p99 reach error on that foot in all four
+   * takes. Lower hips reach FURTHER back, not less far, which is the part that
+   * is easy to get backwards.
+   *
+   * The settle is fixed where it actually broke -- the rate limit in
+   * supportHeight -- not here.
    */
-  maxDip: 0.055,
+  maxDip: 0.12,
   track: 0,
 }
 

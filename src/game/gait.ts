@@ -363,7 +363,46 @@ export class Gait {
       if (f.planted) {
         f.stance = duty > 0 ? p / duty : 0
       } else {
+        // Where an airborne foot is GOING is re-aimed every frame, not fixed at
+        // lift-off.
+        //
+        // The comment above is right that no speed term belongs in the reach:
+        // at a steady pace the phase advances by distance and the geometry
+        // works out. Under ACCELERATION it does not. A foot that leaves the
+        // ground at 0.1 m/s has its stride clamped to the bottom of its range
+        // and is aimed nine centimetres ahead of the hip; by the time it lands
+        // the body is doing 1.15 m/s, and it then has to hold a full 0.39 s
+        // stance from a plant that was already behind it. Measured at the start
+        // of every take: the left sole dragged from 0 to 381 mm off its own
+        // plant across one stance while the support solve sat saturated at the
+        // dip floor. It only ever hit the left foot because the left is the one
+        // that happens to be airborne while he gets up to speed.
+        //
+        // Re-aiming costs nothing at a steady pace -- the target it recomputes
+        // is the same one -- and the swing arc simply follows the new point.
         const t = (p - duty) / (1 - duty)
+        this.hipWorld(i, root, heading, _v)
+        // The reach shrinks as the swing runs out. It is two parts: how far the
+        // hip still has to travel before this foot lands, plus the half
+        // stance-length the foot should be ahead of the hip WHEN it lands. At
+        // t=0 that is exactly strideLen * (1 - duty/2), the value lift-off used
+        // to freeze; at t=1 it is duty*strideLen/2, which is a foot the leg can
+        // actually reach. Aiming the full lift-off reach right up to touchdown
+        // put the plant 0.525 m ahead of a 0.43 m leg and the foot landed
+        // 168 mm short of it.
+        const reach =
+          this.closing && !moving
+            ? 0
+            : speed * (1 - t) * swingTime + duty * strideLen * 0.5
+        const track = this.spec.track ?? 0
+        const side = this.spec.hips[i][0] >= 0 ? 1 : -1
+        const land = heading + yawRate * swingTime * (1 - t) * 0.55
+        f.to.set(
+          _v.x + Math.sin(land) * reach + Math.cos(land) * track * side,
+          0,
+          _v.z + Math.cos(land) * reach - Math.sin(land) * track * side,
+        )
+        f.to.y = ground(f.to.x, f.to.z, _v.y + 1)
         const e = t * t * (3 - 2 * t) // smoothstep: no jerk at either end
         f.pos.lerpVectors(f.from, f.to, e)
         f.pos.y += lift * Math.sin(Math.PI * t)
