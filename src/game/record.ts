@@ -56,7 +56,15 @@ export interface RecProbe {
    * `across` is the part of an arm swing a player can actually see, and the
    * fore-aft part is nearly all depth.
    */
-  boyArms?: { acrossL: number; acrossR: number; aheadL: number; aheadR: number }
+  boyArms?: {
+    acrossL: number
+    acrossR: number
+    aheadL: number
+    aheadR: number
+    /** Metres from the right hand to the middle of his head. The whistle press
+     * is hand-to-mouth, and it was measurably never getting there. */
+    handToHead: number
+  }
   dogAnim?: {
     sit: number
     look: number

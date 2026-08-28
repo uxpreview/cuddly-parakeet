@@ -8,6 +8,7 @@ import { pushPrint } from '../game/trail'
 import { recFrame } from '../game/record'
 import { isRecording } from '../game/clock'
 import { buildBoyRig, boyRest, BOY_GAIT } from '../art/characters'
+import { BOY_JOINTS } from '../art/rig'
 import { Gait, solveChain, setWorldQuaternion, type Chain } from '../game/gait'
 
 // The boy. Authored walking pace, camera-relative input, analytic ground
@@ -54,6 +55,7 @@ const _hip = new THREE.Vector3()
 const _q = new THREE.Quaternion()
 const _fwdWorld = new THREE.Vector3()
 const _hand = new THREE.Vector3()
+const _handTip = new THREE.Vector3()
 
 function wrapAngle(a: number): number {
   return Math.atan2(Math.sin(a), Math.cos(a))
@@ -405,13 +407,18 @@ export function Player() {
       // elbow winged out to the side is both what whistling looks like and the
       // version of it that has a silhouette from behind.
       rig.joints.shoulderR.rotation.set(
-        rest2.shoulderR.x - 0.82 * e,
-        0.35 * e,
-        rest2.shoulderR.z - 1.05 * e,
+        rest2.shoulderR.x - 2.25 * e,
+        0.45 * e,
+        rest2.shoulderR.z - 0.75 * e,
       )
-      rig.joints.elbowR.rotation.x = -0.32 - 1.5 * e
-      rig.joints.elbowR.rotation.z = 0.75 * e
-      head.rotation.x -= 0.34 * e
+      rig.joints.elbowR.rotation.x = -0.32 - 1.05 * e
+      rig.joints.elbowR.rotation.z = 0.35 * e
+      // BACK, not forward. This was subtracting, which tips the chin down and
+      // hides the face behind the crown from a camera above and behind him --
+      // so the one confirmation the player gets that their input registered
+      // read as a shrug. Measured alongside it, the hand never came closer than
+      // 29.8 cm to his head, so there was no hand-to-mouth either.
+      head.rotation.x += 0.30 * e
       chest.rotation.x -= 0.16 * e
       rig.group.position.y += 0.022 * e
     }
@@ -434,7 +441,12 @@ export function Player() {
       }
       const l = arm('elbowL')
       const r = arm('elbowR')
+      // The HAND, not the elbow: one forearm on down the chain from it.
+      _handTip.set(0, -BOY_JOINTS.foreArm, 0)
+      rig.joints.elbowR.localToWorld(_handTip)
+      rig.joints.head.getWorldPosition(_hand)
       recFrame.boyArms = {
+        handToHead: +_handTip.distanceTo(_hand).toFixed(4),
         acrossL: +l.across.toFixed(4),
         acrossR: +r.across.toFixed(4),
         aheadL: +l.ahead.toFixed(4),

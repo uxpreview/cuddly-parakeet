@@ -57,7 +57,7 @@ export const TAKES = [
   {
     id: 'nearmiss',
     label: 'The near-miss: the approach, the play-bow, the break away',
-    seconds: 16,
+    seconds: 20,
     fps: 30,
     // The near-miss node sits INSIDE the town-reveal camera's trigger volume,
     // which is right for the chapter — the reveal and the near-miss are the
@@ -66,7 +66,13 @@ export const TAKES = [
     setup: [
       ['framed', false],
       ['dogTo', 12],
-      ['placeAtNode', 12, -11],
+      // Twenty metres back, not eleven. The manifest's `approach` for this node
+      // is 11 m, so staging the boy AT eleven opened the take with the bow
+      // already two frames in and the closest approach in the whole recording
+      // was 8.62 m -- there was no approach to judge, which is half of what the
+      // must-confirm asks. Twenty gives about eight seconds of closing before
+      // the beat fires.
+      ['placeAtNode', 12, -20],
     ],
     at: [[0.0, 'steer', 'dog']],
   },

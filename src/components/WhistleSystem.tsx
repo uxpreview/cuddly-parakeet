@@ -26,7 +26,7 @@ import { consumeWhistleRequest } from '../game/input'
 import { world } from '../game/world'
 import { now, rand } from '../game/clock'
 import { recFrame } from '../game/record'
-import { BOY, CH1 } from '../art/palette'
+import { CH1 } from '../art/palette'
 
 export function WhistleSystem() {
   useFrame(() => {
@@ -68,9 +68,17 @@ const BIRD_SPAN = 0.84
  * at thirty metres a real bird is four pixels. Four pixels of anything is dirt
  * on the lens. Up close the factor is exactly 1.
  */
-const BIRD_MIN_PX = 16
+const BIRD_MIN_PX = 13
+/**
+ * And never wider than the dog they are answering for. Birds bigger than the
+ * animal, hovering dead centre above his exact position, are not a correlate --
+ * they are a marker, which is the one thing game-design.md says the answer must
+ * never be. Measured, the floor put 28-40 px of bird above a 26-28 px dog.
+ */
+const BIRD_MAX_FRAC = 0.8
 
 const _wp = new THREE.Vector3()
+const _dp = new THREE.Vector3()
 
 // Dust is soft or it is a tile.
 //
@@ -125,8 +133,11 @@ function birdGeometry(): THREE.BufferGeometry {
     // root and tip, each with a leading and trailing edge
     const rl = [x0, 0, C]
     const rt = [x0, 0, -0.55 * C]
-    const tl = [x1, 0.12 * S, C * T]
-    const tt = [x1, 0.12 * S, -0.55 * C * T]
+    // A real dihedral. At 0.12 * S the V was so shallow that from most angles
+    // the pair drew as one flat bar -- measured at 26 x 5 px, which reads as a
+    // smear. The angle IS the bird.
+    const tl = [x1, 0.42 * S, C * T]
+    const tt = [x1, 0.42 * S, -0.55 * C * T]
     return side > 0
       ? [...rl, ...tl, ...tt, ...rl, ...tt, ...rt]
       : [...rl, ...tt, ...tl, ...rl, ...rt, ...tt]
@@ -143,6 +154,8 @@ function birdGeometry(): THREE.BufferGeometry {
 
 interface Bird {
   az: number
+  /** How far from his position the bird starts, in metres. */
+  from: number
   rise: number
   drift: number
   flap: number
@@ -177,6 +190,9 @@ function rollCue(): { birds: Bird[]; puffs: Puff[] } {
       // at a dark canopy and the whole cue is spent against the one background
       // that hides it. From the following camera the pines top out around ten
       // metres above the canyon floor.
+      // Out from him rather than on top of him: a column rising from his exact
+      // position is an arrow pointing down at a dot.
+      from: 1.1 + rand() * 1.6,
       rise: 11 + rand() * 8,
       // Not so far that they stop saying WHERE. The answer gives a direction,
       // so a bird that has drifted twelve metres off him is pointing at nothing.
@@ -232,16 +248,20 @@ export function WhistleCues() {
   // off the path, semi-transparent, same hue and same value: it could not be
   // seen and never could have been.
   //
-  // A silhouette is a value contrast or it is nothing. Boy-hair brown sits 40 L
-  // below pine and 90 below the sky, and limestone shadow is the darkest thing
-  // the ground palette owns.
+  // A silhouette is a value contrast or it is nothing -- but it is also not a
+  // licence to put the darkest marks in the chapter into the sky. Boy-hair brown
+  // measured 71-80 L against a ground median of 225, tied with the boy's own
+  // hair for the darkest thing in frame, seven times over, in a chapter briefed
+  // as cool, clean and hopeful whose darkest values are supposed to belong to
+  // Chapter 3. Deadwood is 124 L: still a hundred below the sky it is seen
+  // against, so it reads as a silhouette, without becoming the subject.
   const mats = useMemo(
     () => ({
       bird: Array.from(
         { length: MAX_CUES },
         () =>
           new THREE.MeshBasicMaterial({
-            color: BOY.hair.hex,
+            color: CH1.deadwood.hex,
             transparent: true,
             opacity: 0,
             depthWrite: false,
@@ -323,7 +343,7 @@ export function WhistleCues() {
         const u = THREE.MathUtils.clamp((e - b.delay) / (1 - b.delay), 0, 1)
         // hard off the ground, still climbing at the end
         const climb = 1 - Math.pow(1 - u, 1.8)
-        const out = b.drift * (1 - Math.pow(1 - u, 2))
+        const out = b.from + b.drift * (1 - Math.pow(1 - u, 2))
         mesh.position.set(
           Math.cos(b.az) * out,
           0.7 + b.rise * climb,
@@ -347,7 +367,14 @@ export function WhistleCues() {
           // The screen-size floor, applied about the bird's own centre so a
           // near bird is untouched and a far one stays a bird rather than
           // becoming a speck.
-          const k = px < BIRD_MIN_PX ? BIRD_MIN_PX / Math.max(px, 0.01) : 1
+          // How tall the dog is on screen right now, by the same projection the
+          // bird just used, so the cap below is in the same units.
+          _dp.copy(world.dog.pos)
+          const dogDist = Math.max(_dp.distanceTo(state.camera.position), 0.01)
+          const dogPx = 0.74 / dogDist / perPx
+          const capPx = Math.max(BIRD_MIN_PX, dogPx * BIRD_MAX_FRAC)
+          let k = px < BIRD_MIN_PX ? BIRD_MIN_PX / Math.max(px, 0.01) : 1
+          if (px * k > capPx) k = capPx / Math.max(px, 0.01)
           mesh.scale.setScalar(k)
           if (px * k > maxPx) maxPx = px * k
         }

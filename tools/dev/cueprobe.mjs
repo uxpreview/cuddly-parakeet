@@ -78,7 +78,7 @@ for (let f = 0; f < 260; f++) {
     const aR = A.map((a) => a.acrossR)
     const aL = A.map((a) => a.acrossL)
     console.log(
-      `press window: right hand across ${(Math.min(...aR) * 100).toFixed(1)} to ${(Math.max(...aR) * 100).toFixed(1)} cm, left ${(Math.min(...aL) * 100).toFixed(1)} to ${(Math.max(...aL) * 100).toFixed(1)} cm`,
+      `press window: right elbow across ${(Math.min(...aR) * 100).toFixed(1)} to ${(Math.max(...aR) * 100).toFixed(1)} cm; hand-to-head ${(Math.min(...A.map((x) => x.handToHead)) * 100).toFixed(1)} to ${(Math.max(...A.map((x) => x.handToHead)) * 100).toFixed(1)} cm`,
     )
   }
   void pr

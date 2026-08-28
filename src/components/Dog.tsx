@@ -6,6 +6,7 @@ import { rand } from '../game/clock'
 import { pushPrint } from '../game/trail'
 import { recFrame } from '../game/record'
 import { buildDogRig, dogRest, DOG_GAIT, DOG_LEGS } from '../art/characters'
+import { DOG } from '../art/palette'
 import { Gait, solveChain, setWorldQuaternion, type Chain } from '../game/gait'
 
 // The dog is an actor, not an AI. This component executes the authored node
@@ -31,8 +32,21 @@ const ACCEL = 3.4 // m/s^2
 const DECEL = 5.0 // m/s^2
 const LEAD = 32 // target lead along the route, keeps him 20-45 m ahead
 const CATCH_DIST = 12 // straight-line distance that counts as "caught up"
-/** How far off the route line he waits, in metres. See `waitOffset`. */
+/** How far off the route line he waits, in metres. See `asideDir`. */
 const WAIT_ASIDE = 0.95
+/** And how fast he steps on and off that verge. A dog's sidestep, not a jump. */
+const ASIDE_RATE = 0.55
+/**
+ * How long his head stays home after a look-back before another may start.
+ * Long enough that the return is visible as a return, at the sizes this chapter
+ * stages him. See the note at the refractory itself.
+ */
+const LOOK_REFRACTORY = 1.25
+/** D21's floor, and the share of the dog it may never exceed. See the note at
+ * `collarMat`: a floor in pixels is a growing fraction of a shrinking dog. */
+const COLLAR_FLOOR_PX = 4.0
+const COLLAR_STROKE_PX = 4.4
+const COLLAR_MAX_FRAC = 0.26
 
 const _pos = new THREE.Vector3()
 const _dir = new THREE.Vector3()
@@ -45,33 +59,29 @@ const _aside = new THREE.Vector3()
 const _asideDir = new THREE.Vector3()
 
 /**
- * Put a waiting dog `aside` metres off the route line, on whichever side has
- * ground under it. Chapters 2 to 4 are manifests, so this has to work from the
- * route alone rather than from a hand-placed position per hazard.
+ * The unit vector to the right of travel at arc length `s`, and which side of
+ * the line has ground on it. Chapters 2 to 4 are manifests, so a waiting dog has
+ * to find the verge from the route alone rather than from a hand-placed position
+ * per hazard.
  */
-function waitOffset(
+function asideDir(
   route: NonNullable<typeof world.route>,
   s: number,
-  aside: number,
+  want: number,
   out: THREE.Vector3,
-): void {
-  route.pointAt(s, out)
+): number {
+  route.pointAt(s, _tmp)
   route.directionAt(s, _asideDir)
-  // right of travel, on the ground plane
-  _aside.set(_asideDir.z, 0, -_asideDir.x)
-  if (_aside.lengthSq() < 1e-6) return
-  _aside.normalize()
+  out.set(_asideDir.z, 0, -_asideDir.x)
+  if (out.lengthSq() < 1e-6) return 0
+  out.normalize()
   for (const side of [1, -1]) {
-    const x = out.x + _aside.x * aside * side
-    const z = out.z + _aside.z * aside * side
+    const x = _tmp.x + out.x * want * side
+    const z = _tmp.z + out.z * want * side
     const ag = artGround(x, z)
-    const ok = ag !== null || sampleGround(x, z, out.y + 0.75)?.walkable
-    if (ok) {
-      out.x = x
-      out.z = z
-      return
-    }
+    if (ag !== null || sampleGround(x, z, _tmp.y + 0.75)?.walkable) return side
   }
+  return 0
 }
 const AXIS_X = new THREE.Vector3(1, 0, 0)
 const AXIS_Y = new THREE.Vector3(0, 1, 0)
@@ -192,6 +202,11 @@ interface DogState {
   lbDuration: number
   // near-miss
   escapeNextLookAt: number
+  /** Metres currently offset from the route line, and which side. See asideDir. */
+  aside: number
+  asideSide: number
+  prevLookTarget: number
+  lookRefractoryUntil: number
   // idle glances at the player
   nextGlanceAt: number
   glanceUntil: number
@@ -244,6 +259,10 @@ function makeState(): DogState {
     trotLbCount: 0,
     lbDuration: 0.9,
     escapeNextLookAt: 0,
+    aside: 0,
+    asideSide: 0,
+    prevLookTarget: 0,
+    lookRefractoryUntil: 0,
     nextGlanceAt: 3,
     glanceUntil: -1,
     lastBounceSeq: 0,
@@ -272,6 +291,19 @@ export function Dog() {
   const st = useRef(makeState()).current
 
   const rig = useMemo(() => buildDogRig(), [])
+  // The collar's pixel floor (D21) keeps it findable at range. But a floor in
+  // PIXELS is a growing FRACTION of a shrinking dog: at 17 px of dog the 4.4 px
+  // stroke made the strap 41% of his height, which reads as a bib and not as a
+  // collar, and Gate 2 banked "the collar is a strap". So the floor is also
+  // capped as a share of him. Both ends matter -- findable at thirty metres,
+  // still a strap at ten.
+  const collarMat = useMemo(
+    () =>
+      rig.materials.find(
+        (m) => (m as THREE.Material).name === DOG.collar.id,
+      ) as THREE.ShaderMaterial | undefined,
+    [rig],
+  )
   const rest = useMemo(() => dogRest(), [])
   const gait = useMemo(() => new Gait(DOG_GAIT), [])
   const chains = useMemo<Chain[]>(
@@ -300,7 +332,7 @@ export function Dog() {
     () => ({ pos: rig.joints.body.position.clone(), rot: rig.joints.body.rotation.clone() }),
     [rig],
   )
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
     const route = world.route
     if (!world.ready || !route) return
     const dt = Math.min(Math.max(delta, 0), 0.05)
@@ -348,6 +380,7 @@ export function Dog() {
     let moveV = 0
     let turnRate = 9
     let holdSway = 0
+    let asideTarget = 0
     // Look-back staging, read by the rig below. Every look-back in the game —
     // the authored node and the ones the trot schedules for itself — comes out
     // of the same three variants, so the pattern reads as behaviour.
@@ -529,8 +562,17 @@ export function Dog() {
           // handed forward from the hero shot, reproduced by the actor rather
           // than by a camera. It is also wrong about the animal -- a dog waiting
           // at water waits at the edge of it.
-          waitOffset(route, rn.s0, WAIT_ASIDE, _pos)
-          desiredHeading = toPlayerYaw
+          _pos.copy(rn.points[0])
+          asideTarget = WAIT_ASIDE
+          // The near-miss hold got an authored weight shift and this node did
+          // not, so the node that carries story rule 2 -- he waits at danger
+          // until the boy is through, which is the most visible thing in the
+          // game -- held a single position to four decimal places for all 382
+          // frames of the ford wait. A sitting dog watching for you is not a
+          // bollard.
+          holdSway = 0.7
+          const waited = st.clock - st.nodeStart
+          desiredHeading = toPlayerYaw + Math.sin(waited * 0.41) * 0.075
           if (st.phase === 'main') {
             sitTarget = 1
             lookTarget = glance() ? 1 : 0.3
@@ -764,9 +806,56 @@ export function Dog() {
       }
     }
 
+    // A look-back is an EVENT, which means his head has to come back.
+    //
+    // Measured across the whole 13 s lookbacks take, `look` never dropped below
+    // 0.122 and sat at or above 0.9 on four frames in five: the node's own
+    // look-back, the catch-up surge that fires whenever the boy is inside
+    // CATCH_DIST, and the parked-at-the-clamp glance were overlapping into one
+    // continuous stare. A head welded backwards has no variants, however many
+    // ways it got there -- there is no event for them to be variants of.
+    //
+    // So every look-back is followed by a refractory in which the head returns
+    // to neutral and stays there. The whistle answer below is deliberately
+    // exempt: an answer the player asked for must always reach the head.
+    if (lookTarget >= 0.9 && st.prevLookTarget < 0.9) st.lookRefractoryUntil = 0
+    if (st.prevLookTarget >= 0.9 && lookTarget < 0.9)
+      st.lookRefractoryUntil = st.clock + LOOK_REFRACTORY
+    st.prevLookTarget = lookTarget
+    if (st.clock < st.lookRefractoryUntil) lookTarget = 0
+
     // whistle answer steals the head, never the route
     if (bouncing) {
       lookTarget = st.bounceKind === 'subtle' ? Math.max(lookTarget, 0.35) : 1
+    }
+
+    // The verge offset is a QUANTITY he walks on and off, never a position he
+    // is placed at.
+    //
+    // Applying it inside the hazard-wait and letting the next node read
+    // route.pointAt() meant advance() snapped him back onto the line: measured,
+    // 0.95 m in one frame at the ford, 44 px sideways on a dog 34 px tall, in
+    // the open, with a pose change on the same frame. game-design.md is
+    // unambiguous -- "he only teleports while fully occluded, never on screen"
+    // -- and that was my own beside-the-route fix creating the thing it was
+    // meant to prevent. So the offset eases toward whatever the current node
+    // wants at a walking rate, and stepping off the verge is a step.
+    if (asideTarget !== 0 && st.asideSide === 0) {
+      st.asideSide = asideDir(route, st.s, asideTarget, _aside)
+    }
+    const asideWant = asideTarget * st.asideSide
+    st.aside += THREE.MathUtils.clamp(asideWant - st.aside, -ASIDE_RATE * dt, ASIDE_RATE * dt)
+    if (Math.abs(st.aside) < 1e-4) {
+      st.aside = 0
+      st.asideSide = 0
+    } else {
+      route.directionAt(st.s, _asideDir)
+      _aside.set(_asideDir.z, 0, -_asideDir.x)
+      if (_aside.lengthSq() > 1e-6) {
+        _aside.normalize()
+        _pos.x += _aside.x * st.aside
+        _pos.z += _aside.z * st.aside
+      }
     }
 
     // Ground snap onto the ART surface where there is one, so he wades the ford
@@ -857,6 +946,20 @@ export function Dog() {
     const g2 = holder.current
     if (!g2) return
     g2.visible = world.dog.visible
+
+    if (collarMat?.uniforms.uMinScreenPx) {
+      const cam = state.camera as THREE.PerspectiveCamera
+      const perPx = (2 * Math.tan((cam.fov * Math.PI) / 360)) / Math.max(state.size.height, 1)
+      const dogPx = 0.74 / Math.max(st.pos.distanceTo(cam.position), 0.01) / perPx
+      collarMat.uniforms.uMinScreenPx.value = Math.min(
+        COLLAR_FLOOR_PX,
+        dogPx * COLLAR_MAX_FRAC * 0.5,
+      )
+      collarMat.uniforms.uMinScreenWidthPx.value = Math.min(
+        COLLAR_STROKE_PX,
+        dogPx * COLLAR_MAX_FRAC,
+      )
+    }
 
     // The body rides the planted feet, so a trot over broken ground rises and
     // falls with what he is standing on rather than with a terrain sample.
@@ -980,8 +1083,14 @@ export function Dog() {
       amp = 0
       lift = 0.15 // held out level and still: the stare before the bolt
     } else if (sitting) {
-      rate = 1.6 // a slow sweep along the ground, and it never stops entirely
-      amp = 0.42
+      // WIDE and slow, against the trot's narrow and fast. The two used to
+      // arrive at exactly 0.42 rad from opposite directions -- the sit's
+      // constant and the trot's 0.3 + speedN * 0.12 at full speed -- which is a
+      // coincidence, not a design, and it left rate as the only thing telling
+      // them apart. At the sizes this chapter stages him a difference that
+      // exists only in frequency is a difference nobody sees.
+      rate = 2.4
+      amp = 0.66
       lift = -0.55
     } else if (activity === 'near-miss-hold') {
       rate = st.phase === 'nm-beat' ? 14 : 8 // high and fast: this is play

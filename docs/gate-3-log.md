@@ -224,3 +224,85 @@ test, and all six shots were re-shot at both aspect ratios into
   limestone shadow 8.3%, river 4.7%, pine 1.6%, sky zenith 1.6%.
 - **The hero shot's fusion is gone.** The dog and the boy are separated in both
   axes; he is no longer standing on the boy's head.
+
+
+---
+
+## Iteration 2 — `renders/g3-04/` — **FAILS** (4 of 6 must-confirms)
+
+| # | Must-confirm | Iter 1 | Iter 2 |
+|---|---|---|---|
+| 1 | Boy has weight, stopping settles, no foot sliding | FAIL | **PASS** (thin) |
+| 2 | Footprints alternate; pawprints match his gait | PASS | **PASS** |
+| 3 | Three visibly different look-back variants | FAIL | **FAIL** |
+| 4 | Near-miss reads as staged, not rubber-banded | FAIL | **FAIL** |
+| 5 | Whistle answer has a visual correlate, legible muted | FAIL | **FAIL** |
+| 6 | Tail language at trot and at wait | PASS | **FAIL** |
+
+Must-confirm 6 regressed on the critic's own iteration-1 reservation, which I
+recorded and did not act on: the tail amplitude is identical at trot and at wait.
+That is my omission, not a change in the code.
+
+### What failed
+
+**3. Look-backs.** `dogAnim.look` never drops below **0.122 in the whole 13 s
+`lookbacks` take** and sits at or above 0.9 on 80% of frames — his head is welded
+backwards, so there is no event to be a variant OF. The variants are separated
+almost entirely by speed cap, and ordinary `trot` in the same take runs at
+0.15 m/s (f27–f74), which is variant C's cap. `nearmiss` plays variant 0 five
+times at exactly 0.80 s and exactly 1.45 m/s — a metronome.
+
+**4. Near-miss.** There is no approach: the take opens at a 10.96 m gap with the
+bow already rising, and the closest approach in the whole take is **8.62 m**.
+The payoff plays at 22–24 px on a dead-straight open plateau with the horizon
+visible for all 16 s — no occluder, no bend, so `game-design.md`'s prescribed
+fix (staging, not speed) has not been applied; only the speed profile changed.
+The escape then holds station at 15.2–16.7 m, inside his ordinary trot lead.
+
+**5. Whistle correlate.** Legibility is fixed — 7 birds, 28–40 px, 0.95 opacity,
+and the dog's own body event (2.39 → 0.17 m/s, `look` 0 → 1). What is drawn
+fails: the birds are wingless dark crescents (one measures 26x5 px), they are
+**the darkest marks in the frame** (cluster mean 71–80 L against a ground median
+of ~225, tied with the boy's hair), and at 28–40 px they are **bigger than the
+26–28 px dog**, hovering dead centre above his exact position. "The answer gives
+a direction, never a marker" — that is a marker.
+
+**6. Tail.** `tailAmp` is exactly 0.420 at trot and exactly 0.420 at the ford
+hazard-wait; only rate carries, and 1.60 rad/s is one sweep per 3.9 s. Worse,
+the tail cannot be located on screen at all, even at the largest staging in the
+set (35 px), in a fresh PNG re-render.
+
+### Broken beyond the six
+
+1. **The dog teleports 0.95 m on screen — a regression iteration 2 introduced.**
+   `ford` f381→f382, one frame: 44 px sideways on a dog 34 px tall, in the open,
+   with a simultaneous pose change. `game-design.md`: "He only teleports while
+   fully occluded, never on screen." Cause is my own beside-the-route fix: he
+   waits at `waitOffset(...)` and `advance()` snaps him back to `route.pointAt`.
+2. **The Gate 2 fusion item is back and is now the reel's dominant composition.**
+   `ford` f434: dog's feet at y=274, boy's crown at y=274 — **zero clearance**.
+   In `lookbacks` the dog's screen x stays inside 475–482 for the entire take
+   while the boy is drawn at 467–494: one vertical column for 13 s.
+3. **The dog does not separate from the ground.** `lookbacks` f282: dog median
+   194.7 L against local ground 194.7 L — **0.0 L**, on a grain SD of 2.1.
+   Iteration 1 raised this at 3.7 L and I declined it as palette. The critic's
+   answer: the palette is closed, the *staging* is not, and he is on the pale
+   path in every frame of every take.
+4. **The hazard-wait is a statue.** The dog's world position is a single value to
+   four decimals across all 382 frames of the ford wait. The near-miss hold got
+   an authored weight shift in iteration 2; the node carrying story rule 2 got
+   nothing.
+5. **The whistle press is unreadable**: a skin-coloured stump swells out of the
+   shoulder, has no hand, never reaches his face.
+6. The collar has become a **bib** — 41% of dog height at `ford` f60. The raised
+   floors only bite because the reel stages him at 15–24 px.
+
+### What held
+
+Collar at range, collar through the play-bow, the settle jolt, the boy's contact
+shadow, the arm swing mechanically, the escape's speed shaping, and the print
+density numerically (212 → 98, 26.9 → 34.0 cm).
+
+### What changed in response
+
+*(iteration 3, below)*
