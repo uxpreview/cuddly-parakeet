@@ -168,8 +168,24 @@ export class Gait {
     ground: GroundFn,
     /** Radians per second the body is turning, so a plant can anticipate it. */
     yawRate = 0,
+    /**
+     * Freeze the plan entirely. For a pose that OVERRIDES the legs — a sit, a
+     * play-bow, the rigid stare — where the planner has no business having an
+     * opinion about where the feet are. Without it a sitting dog's feet were
+     * being stepped in place by the catch-up logic below: measured, 59 footfall
+     * clusters across a hazard-wait with a same-foot stride of 0 cm, which is a
+     * dog shuffling on his haunches.
+     */
+    hold = false,
   ): void {
     if (!this.started) this.reset(root, heading, ground)
+    for (const f of this.feet) f.justPlanted = false
+    if (hold) {
+      this.stillFor = 0
+      this.closing = false
+      return
+    }
+
     // Standing still leaves the feet wherever they were last put, and the body
     // may have turned or been staged elsewhere meanwhile. Setting off again
     // re-stages the plan rather than dragging the old one into motion.
@@ -186,10 +202,28 @@ export class Gait {
       this.spec.strideLen *
       THREE.MathUtils.clamp(speed / this.spec.nominal, 0.42, 1.05)
     if (this.stride <= 0) this.stride = wanted
-    for (const f of this.feet) f.justPlanted = false
 
-    const moving = speed > 0.12
+    // 0.3, not 0.12. A dog stopping to look back over his shoulder is capped
+    // at 0.15 m/s, which counted as "moving" and advanced the phase at four
+    // seconds a cycle — so his feet stayed where they were planted while his
+    // hindquarters swung twenty degrees round under him, and his legs simply
+    // could not reach: measured at 104 mm of median reach error through the
+    // look-back take. A crawl is not walking; it is standing and shuffling.
+    const moving = speed > 0.3
     const anyAirborne = this.feet.some((f) => !f.planted)
+
+    // A foot left further behind its hip than the leg can follow has to step,
+    // whatever the body thinks it is doing.
+    const maxExcursion = duty * this.stride * 0.5 + 0.09
+    let overreached = false
+    for (let i = 0; i < this.feet.length; i++) {
+      if (!this.feet[i].planted) continue
+      this.hipWorld(i, root, heading, _v)
+      if (Math.hypot(_v.x - this.feet[i].pos.x, _v.z - this.feet[i].pos.z) > maxExcursion) {
+        overreached = true
+        break
+      }
+    }
 
     // Coming to rest is not freezing. A walker stopped mid-stride stands with
     // his feet half a stride apart and one leg at full stretch — which is both
@@ -197,6 +231,7 @@ export class Gait {
     // cannot quite reach. So when the stick is released he takes one more step
     // to bring the trailing foot up beside the other, and THEN holds.
     if (!moving) {
+      if (overreached) this.closing = true
       if (!this.closing) {
         for (let i = 0; i < this.feet.length; i++) {
           this.hipWorld(i, root, heading, _v)

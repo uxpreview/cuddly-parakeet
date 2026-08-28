@@ -146,7 +146,8 @@ export function Player() {
       vel.set(0, 0, 0)
       st.meshY = null // resnap the mesh, no slow settle across the map
       gait.reset(pos, world.player.heading, groundFn)
-    }
+      recFrame.staged = 1
+    } else recFrame.staged = 0
 
     // --- intent, camera-relative --------------------------------------------
     const mx = ended ? 0 : input.move.x

@@ -347,6 +347,7 @@ export function Dog() {
         return s && s.walkable ? s.y : y
       })
       if (rn.node.type === 'trot') st.nextLookBackAt = st.clock + 2
+      recFrame.staged = 1
     }
 
     const advance = () => {
@@ -703,6 +704,9 @@ export function Dog() {
       heading,
       groundFn,
       yawRate,
+      // Sitting, bowing and the rigid stare all OVERRIDE the leg solve, so the
+      // planner is told to hold rather than to plan for feet it does not own.
+      frozen || sitting,
     )
     if (!sitting && !frozen) {
       for (const f of gait.feet) {
@@ -875,12 +879,21 @@ export function Dog() {
         sole: [+_foot.x.toFixed(4), +(_foot.y - pawLift[i]).toFixed(4), +_foot.z.toFixed(4)],
       }
     })
+    recFrame.dogHeld = frozen || sitting ? 1 : 0
     recFrame.dogAnim = {
       sit: +st.sit.toFixed(3),
       look: +st.look.toFixed(3),
       tailAmp: +st.tailAmp.toFixed(3),
       tailRate: +st.tailRate.toFixed(2),
-      lbVariant: activity === 'look-back' ? st.lbVariant : -1,
+      // The trot schedules look-backs of its own, and they are the ones most of
+      // the game is made of; reporting only the node's leaves the reel looking
+      // as though he never looked back at all.
+      lbVariant:
+        activity === 'look-back'
+          ? st.lbVariant
+          : st.clock < st.lookBackUntil
+            ? st.lookBackVariant
+            : -1,
       bow: +st.bow.toFixed(3),
       speed: +st.animSpeed.toFixed(3),
       gaitPhase: +gait.phase.toFixed(4),

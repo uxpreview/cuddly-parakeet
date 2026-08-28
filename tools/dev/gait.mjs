@@ -79,6 +79,14 @@ for (const take of takes) {
     ]),
   ]
 
+  // Frames the harness staged (a teleport) and frames where a pose OWNS the
+  // dog's legs (a sit, a bow, the rigid stare) are not frames the footfall
+  // planner is responsible for. Counting them measures the instrument.
+  const skipFrame = new Uint8Array(probes.length)
+  probes.forEach((p, i) => {
+    if (!p.staged) return
+    for (let j = Math.max(0, i - 2); j < Math.min(probes.length, i + 8); j++) skipFrame[j] = 1
+  })
   const pctl = (a, q) => (a.length ? a.slice().sort((x, y) => x - y)[Math.min(a.length - 1, Math.floor(q * a.length))] : 0)
   const rows = []
   // The first half second is the teleport settling and is not the take.
@@ -93,7 +101,8 @@ for (const take of takes) {
     for (let i = 0; i < probes.length; i++) {
       const e = get(probes[i])
       if (!e) continue
-      if (e.plant && i >= SKIP) {
+      const held = name.startsWith('dog') && probes[i].dogHeld
+      if (e.plant && i >= SKIP && !skipFrame[i] && !held) {
         reaches.push(d3(e.sole, e.plan))
         if (prev && prev.plant) {
           const s = Math.hypot(e.sole[0] - prev.sole[0], e.sole[2] - prev.sole[2])
@@ -104,8 +113,8 @@ for (const take of takes) {
           }
         }
       }
-      if (!e.plant && prev && prev.plant) plants++
-      prev = e
+      if (!e.plant && prev && prev.plant && !skipFrame[i]) plants++
+      prev = skipFrame[i] || held ? null : e
     }
     rows.push({
       name,
@@ -124,6 +133,7 @@ for (const take of takes) {
   // --- prints -------------------------------------------------------------
   const prints = []
   probes.forEach((p, i) => {
+    if (skipFrame[i]) return
     for (const q of p.printsLaid ?? []) prints.push({ ...q, t: i / SIM_HZ })
   })
   const byKind = {}
@@ -235,6 +245,7 @@ for (const take of takes) {
     probes.forEach((p, i) => {
       if (!p.dogPaws) return
       const prevP = probes[i - 1]
+      if (skipFrame[i] || p.dogHeld) return
       for (const e of p.dogPaws) {
         const was = prevP && prevP.dogPaws && prevP.dogPaws.find((q) => q.leg === e.leg)
         if (e.plant && was && !was.plant) events.push({ leg: e.leg, t: i / SIM_HZ, at: e.at })

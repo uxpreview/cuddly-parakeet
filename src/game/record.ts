@@ -26,6 +26,10 @@ export interface RecProbe {
   perf: { drawCalls: number; triangles: number }
   /** The dog in SCREEN space: x, y, and his projected height in pixels. */
   dogScreen: [number, number, number]
+  /** 1 on a frame where the harness teleported somebody. Not a game frame. */
+  staged?: number
+  /** 1 while a pose overrides the dog's legs, so the plan does not own them. */
+  dogHeld?: number
   /** Prints laid down since the last probe. */
   printsLaid?: { kind: string; x: number; y: number; z: number; heading: number }[]
   /** Filled by the character rigs; see src/art/rig.ts. */

@@ -718,7 +718,7 @@ export function buildCollar(): THREE.Mesh {
     // dog was four metres from the camera. Thickening the strap along its own
     // axis is what puts the short axis back, and up close the factor is still
     // exactly 1.
-    minScreenWidthPx: 2.6,
+    minScreenWidthPx: 1.8,
     side: THREE.DoubleSide,
   })
   mat.name = DOG.collar.id

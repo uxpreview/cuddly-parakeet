@@ -127,9 +127,19 @@ void main() {
     float along = dot(rad, axis);
     vec3 perp = rad - axis * along;
     float pl = length(perp);
-    if (pl > 1e-5) perp *= max(1.0, need / pl);
+    float radK = pl > 1e-5 ? max(1.0, need / pl) : 1.0;
+    perp *= radK;
+    // Two floors on the stroke, and the band takes whichever is larger.
+    //
+    // The first is proportional: the strap widens with the ring, so an expanded
+    // collar is the same strap drawn bigger rather than a ring with a hairline
+    // on it. The second is D21's pixel floor, which is what actually defends
+    // the SHORT axis of the ellipse a ring makes when it is seen from behind
+    // and above — the angle the game shows most, and the one the radius floor
+    // does nothing for.
     float aw = abs(along);
-    if (aw > 1e-6) along = (along / aw) * max(aw, needW);
+    float wantW = max(aw * radK, needW);
+    if (aw > 1e-6) along = (along / aw) * wantW;
     wp.xyz = ctr + perp + axis * along;
     vWorldPos = wp.xyz;
   #endif
