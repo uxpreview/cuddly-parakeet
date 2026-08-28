@@ -608,7 +608,17 @@ export function Dog() {
           // ring of the collar all come out from behind him.
           desiredHeading = toPlayerYaw + WAIT_QUARTER + Math.sin(waited * 0.41) * 0.075
           if (st.phase === 'main') {
-            sitTarget = 1
+            // He turns FIRST, and sits once he is round.
+            //
+            // A sit overrides the legs, so the footfall planner is told to hold
+            // them: any body yaw after that drags four planted paws across the
+            // ground. Sitting straight away and letting the three-quarter turn
+            // happen underneath him measured 210 mm of median reach error on
+            // his front left and 56% of stance over 10 mm -- he pivoted on his
+            // own feet. Standing, the gait re-plants through a turn perfectly
+            // well; it only cannot while it is being held.
+            const turned = Math.abs(wrapAngle(desiredHeading - st.heading)) < 0.14
+            sitTarget = turned ? 1 : 0
             lookTarget = glance() ? 1 : 0.3
             if (world.triggersEntered.has(n.safetyTrigger)) {
               st.phase = 'release'
