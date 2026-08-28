@@ -1305,16 +1305,89 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
   materials.push(beyondMat)
   group.add(new THREE.Mesh(beyond.geometry(), beyondMat))
 
+  // --- the walkable surface, exactly -----------------------------------------
+  //
+  // Characters and prints stand on THIS, and it has to be the surface the loft
+  // actually built. It used to be the sun-occlusion heightfield, which is a 2 m
+  // grid of the maximum height in each cell — fine for a shadow march and badly
+  // wrong for a foot: it stepped in 15 to 27 cm jumps between adjacent cells,
+  // and a planted foot that has to follow that is a foot sliding 27 cm. It also
+  // reported the ford as dry, because a 2 m cell containing both the bank and
+  // the channel reports the bank.
+  //
+  // So: project the query onto the centerline, find the two cross-section rungs
+  // that bracket its lateral offset, and interpolate. Same `chainPointAt` the
+  // mesh is built from, so a foot is on the mesh by construction rather than
+  // near it. The jitter is a deterministic function of (sample, rung), which is
+  // what makes that possible at all.
+  let lastI = 0
+  const _gp = new THREE.Vector3()
+  const sectionAt = (i: number, x: number, z: number): number | null => {
+    const idx = Math.max(0, Math.min(C.length - 1, i))
+    const [cx, , cz, h] = centerAt(idx)
+    const lx = Math.sin(h)
+    const lz = -Math.cos(h)
+    const o = (x - cx) * lx + (z - cz) * lz
+    const chain = art.legs[legIndexAt[idx]].chain
+    let prevO = 0
+    let prevY = 0
+    for (let k = 0; k < chain.length; k++) {
+      chainPointAt(idx, k, _gp)
+      const ok = (_gp.x - cx) * lx + (_gp.z - cz) * lz
+      if (k > 0 && o >= Math.min(prevO, ok) && o <= Math.max(prevO, ok)) {
+        const t = ok === prevO ? 0 : (o - prevO) / (ok - prevO)
+        return prevY + (_gp.y - prevY) * t
+      }
+      prevO = ok
+      prevY = _gp.y
+    }
+    return null
+  }
+  const groundAt = (x: number, z: number): number | null => {
+    // The actors move continuously, so the sample they were on last frame is
+    // almost always the one they are on now. A full scan is the fallback, not
+    // the path.
+    let bestI = -1
+    let bestD = Infinity
+    const consider = (i: number) => {
+      const c = centerAt(i)
+      const d = (c[0] - x) * (c[0] - x) + (c[2] - z) * (c[2] - z)
+      if (d < bestD) {
+        bestD = d
+        bestI = i
+      }
+    }
+    for (let i = Math.max(0, lastI - 24); i <= Math.min(C.length - 1, lastI + 24); i++) consider(i)
+    if (bestD > 400) {
+      bestD = Infinity
+      bestI = -1
+      for (let i = 0; i < C.length; i += 3) consider(i)
+      for (let i = Math.max(0, bestI - 3); i <= Math.min(C.length - 1, bestI + 3); i++) consider(i)
+    }
+    if (bestI < 0) return null
+    lastI = bestI
+    // Blend along the run as well as across it, so a foot crossing a sample
+    // boundary does not step.
+    const c = centerAt(bestI)
+    const fx = Math.sin(c[3])
+    const fz = Math.cos(c[3])
+    const t = (x - c[0]) * fx + (z - c[2]) * fz
+    const nb = Math.max(0, Math.min(C.length - 1, bestI + (t >= 0 ? 1 : -1)))
+    const a = sectionAt(bestI, x, z)
+    if (a === null) return null
+    const b = sectionAt(nb, x, z)
+    if (b === null) return a
+    const w = Math.min(1, Math.abs(t) / Math.max(0.001, art.step))
+    return a + (b - a) * w
+  }
+
   return {
     group,
     hazeFloor: art.hazeFloor,
     materials,
     sunOcclusionAt: (x, y, z) => shadow.sample(x, y, z),
     skyViewAt: (x, y, z) => shadow.skyViewCached(x, y, z),
-    groundAt: (x, z) => {
-      const h = shadow.heightAt(x, z)
-      return h < -1e8 ? null : h
-    },
+    groundAt,
   }
 }
 

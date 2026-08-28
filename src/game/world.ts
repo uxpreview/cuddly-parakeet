@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import type { ChapterManifest, GreyboxTerrain, PathFile, TriggerDef } from './types'
-import type { ArtTerrain } from '../art/artTerrain'
+import type { ArtTerrain, ArtScene } from '../art/artTerrain'
 import { BlockIndex, type GroundSample } from './terrain'
 import { Route, ProgressTracker } from './route'
 
@@ -24,6 +24,9 @@ export const world = {
   manifest: null as ChapterManifest | null,
   terrain: null as GreyboxTerrain | null,
   art: null as ArtTerrain | null,
+  // The BUILT art scene, once Level has made it. Characters and prints stand on
+  // this surface rather than on the collision blocks; see `artGround`.
+  artScene: null as ArtScene | null,
   blocks: null as BlockIndex | null,
   route: null as Route | null,
   paths: new Map<string, PathFile>(),
@@ -35,6 +38,10 @@ export const world = {
     moving: false,
     progress: 0, // arc length along the dog's route
     tracker: null as ProgressTracker | null,
+    // Dev-only staging hook: arc length to jump to, or -1. The player system
+    // consumes it and resets its own velocity and mesh smoothing, which is why
+    // it is a request rather than a direct write to `pos`.
+    teleportTo: -1,
   },
 
   dog: {
@@ -64,6 +71,20 @@ export const world = {
 
 export function sampleGround(x: number, z: number, fromY: number): GroundSample | null {
   return world.blocks ? world.blocks.sampleGround(x, z, fromY) : null
+}
+
+/**
+ * Height of the ART surface at a point, or null where there is none.
+ *
+ * The two surfaces agree almost everywhere. Where they deliberately do not —
+ * the ford bed sits half a metre below its collision slab, so the crossing is
+ * under water — standing on the collision height leaves the boy dry on top of
+ * the river, which is exactly what the Gate 1 verdict filed and Gate 2 carried.
+ * Collision and staging still come from the blocks; only what a character
+ * VISUALLY stands on comes from here.
+ */
+export function artGround(x: number, z: number): number | null {
+  return world.artScene ? world.artScene.groundAt(x, z) : null
 }
 
 export function pointInSolid(x: number, y: number, z: number): boolean {

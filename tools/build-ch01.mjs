@@ -349,17 +349,22 @@ const manifest = {
       exit: { face: pos(stareI), hold: 1.5 },
       idle: 'sniff',
     },
-    { type: 'trot', path: 'paths/dog-ch1-a.json', speed: 3.0 },
+    // Trot speeds, and they are not free numbers: a 0.5 m dog covers 0.62 m a
+    // stride, so 2.6 m/s is 4.2 stride cycles a second and 2.2 is 3.55, which
+    // is where a real trot sits. Story rule 4 says trotting, never running, and
+    // the cadence is where that either reads or does not. The bolt keeps a
+    // little more urgency than the rest of the chapter.
+    { type: 'trot', path: 'paths/dog-ch1-a.json', speed: 2.4 },
     { type: 'hazard-wait', at: pos(hazard1I), safetyTrigger: 'ford-crossed' },
-    { type: 'trot', path: 'paths/dog-ch1-b.json', speed: 2.6 },
+    { type: 'trot', path: 'paths/dog-ch1-b.json', speed: 2.2 },
     { type: 'look-back', at: pos(barLookI), variant: 'auto' },
-    { type: 'trot', path: 'paths/dog-ch1-c.json', speed: 2.6 },
+    { type: 'trot', path: 'paths/dog-ch1-c.json', speed: 2.2 },
     { type: 'wait', at: pos(ledgeBottomI), until: { proximity: 26 }, idle: 'stand' },
-    { type: 'trot', path: 'paths/dog-ch1-d.json', speed: 2.6 },
+    { type: 'trot', path: 'paths/dog-ch1-d.json', speed: 2.2 },
     { type: 'hazard-wait', at: pos(hazard2I), safetyTrigger: 'log-crossed' },
-    { type: 'trot', path: 'paths/dog-ch1-e.json', speed: 2.6 },
+    { type: 'trot', path: 'paths/dog-ch1-e.json', speed: 2.2 },
     { type: 'wait', at: pos(rimWaitI), until: { proximity: 18 }, idle: 'stand' },
-    { type: 'trot', path: 'paths/dog-ch1-f.json', speed: 2.6 },
+    { type: 'trot', path: 'paths/dog-ch1-f.json', speed: 2.2 },
     {
       type: 'near-miss',
       at: pos(nearMissI),

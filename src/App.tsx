@@ -8,15 +8,23 @@ import { Level } from './components/Level'
 import { Player } from './components/Player'
 import { CameraRig } from './components/CameraRig'
 import { Dog } from './components/Dog'
-import { Pawprints } from './components/Pawprints'
+import { Prints } from './components/Prints'
 import { WhistleSystem, WhistleCues } from './components/WhistleSystem'
 import { PerfProbe, PerfHudOverlay } from './components/PerfHud'
 import { Joystick } from './ui/Joystick'
 import { WhistleButton } from './ui/WhistleButton'
 import { Legend } from './ui/Legend'
 import { ArtBible } from './art/ArtBible'
+import { installRecorder } from './game/record'
 
 const CHAPTER = 'ch01-canyon'
+
+// `?rec=<seed>` hands the frameloop to tools/record.mjs. `?bare` drops the
+// touch UI and the legend, so a recording is the game and nothing on top of it.
+const params = typeof location !== 'undefined' ? new URLSearchParams(location.search) : null
+const REC_SEED = params?.get('rec')
+const RECORDING = REC_SEED !== null && REC_SEED !== undefined
+const BARE = params?.has('bare') ?? false
 
 export function App() {
   // Gate 2 lives at ?scene=art-bible: a static, posed scene sharing the
@@ -50,6 +58,7 @@ function Game() {
         setJoystick,
       }
     }
+    if (RECORDING) installRecorder(Number(REC_SEED) || 1)
     return unbind
   }, [])
 
@@ -64,8 +73,15 @@ function Game() {
   return (
     <>
       <Canvas
-        camera={{ position: [0, 3, 8], fov: 55, near: 0.2, far: 400 }}
+        // Far plane 1400, the art bible's. At 400 the chapter's `beyond`
+        // geometry — the town, the sea band, the highland plates, all of it a
+        // kilometre out — was being clipped mid-triangle, and a clipped
+        // hundred-metre triangle is a spike: the shadow-side wall came apart
+        // into a fan of slivers across a third of the frame.
+        camera={{ position: [0, 3, 8], fov: 55, near: 0.15, far: 1400 }}
         dpr={[1, 2]}
+        frameloop={RECORDING ? 'never' : 'always'}
+        gl={{ antialias: true, preserveDrawingBuffer: RECORDING, alpha: false }}
         style={{ touchAction: 'none' }}
       >
         {phase !== 'loading' && (
@@ -74,7 +90,7 @@ function Game() {
             <Player />
             <CameraRig />
             <Dog />
-            <Pawprints />
+            <Prints />
             <WhistleSystem />
             <WhistleCues />
           </>
@@ -82,7 +98,7 @@ function Game() {
         <PerfProbe />
         {isDev && <DevCamProbe />}
       </Canvas>
-      {phase === 'playing' && (
+      {phase === 'playing' && !BARE && (
         <>
           <Joystick />
           <WhistleButton />
@@ -90,7 +106,7 @@ function Game() {
         </>
       )}
       {phase === 'ended' && <EndCard title={chapterTitle} />}
-      <PerfHudOverlay />
+      {!BARE && <PerfHudOverlay />}
     </>
   )
 }

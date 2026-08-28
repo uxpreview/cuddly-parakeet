@@ -7,6 +7,7 @@
 import { useEffect, useState } from 'react'
 import { requestWhistle } from '../game/input'
 import { world } from '../game/world'
+import { now } from '../game/clock'
 
 export function WhistleButton() {
   // 0..1 cooldown recovery, quantized so React re-renders stay rare.
@@ -14,7 +15,7 @@ export function WhistleButton() {
 
   useEffect(() => {
     const id = window.setInterval(() => {
-      const t = (performance.now() - world.whistle.lastAt) / world.whistle.cooldownMs
+      const t = (now() - world.whistle.lastAt) / world.whistle.cooldownMs
       setRecovery(Math.min(Math.max(Math.round(t * 30) / 30, 0), 1))
     }, 100)
     return () => window.clearInterval(id)

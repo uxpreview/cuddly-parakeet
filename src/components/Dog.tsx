@@ -1,7 +1,12 @@
 import { useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { world, sampleGround, isDev, type DogActivity } from '../game/world'
+import { world, sampleGround, artGround, isDev, type DogActivity } from '../game/world'
+import { rand } from '../game/clock'
+import { pushPrint } from '../game/trail'
+import { recFrame } from '../game/record'
+import { buildDogRig, dogRest, DOG_GAIT, DOG_LEGS } from '../art/characters'
+import { Gait, solveChain, setWorldQuaternion, type Chain } from '../game/gait'
 
 // The dog is an actor, not an AI. This component executes the authored node
 // route from the chapter manifest and nothing else: no pathfinding, no
@@ -10,17 +15,32 @@ import { world, sampleGround, isDev, type DogActivity } from '../game/world'
 //   2. waits at danger until the boy is through (hazard-wait)
 //   3. looks back constantly — every stretch of movement includes look-backs
 //   4. always slightly out of reach; the near-miss is staged, never rubber-banded
+//
+// The mesh is the art bible's dog, rigged — the Gate 1 grey box is gone. His
+// feet are planted by the same footfall planner the boy's are (src/game/gait.ts),
+// on a diagonal trot, and every pawprint in the game is spawned by one of those
+// plants. "Pawprints match his gait" is therefore not a claim, it is the only
+// way a pawprint can come into existence.
 
 const MAX_SPEED = 3.2 // absolute ceiling, ever — trotting, not running
+// A dog going from a look-back to a surge used to cross 3 m/s in an eighth of a
+// second — 23 m/s^2, which is not an animal, and it showed up in the gait as
+// paws sliding 26 mm a frame while the plan raced away from the legs. It also
+// reads as a teleport rather than as "he moves on", which is story rule 4.
+const ACCEL = 3.4 // m/s^2
+const DECEL = 5.0 // m/s^2
 const LEAD = 32 // target lead along the route, keeps him 20-45 m ahead
 const CATCH_DIST = 12 // straight-line distance that counts as "caught up"
-
-// The collar is the only red in the game. #D0342C, nowhere else, ever.
-const COLLAR_RED = '#D0342C'
 
 const _pos = new THREE.Vector3()
 const _dir = new THREE.Vector3()
 const _tmp = new THREE.Vector3()
+const _foot = new THREE.Vector3()
+const _q = new THREE.Quaternion()
+const _fwdWorld = new THREE.Vector3()
+const _sitQ = new THREE.Quaternion()
+const AXIS_X = new THREE.Vector3(1, 0, 0)
+const AXIS_Y = new THREE.Vector3(0, 1, 0)
 
 function wrapAngle(a: number): number {
   while (a > Math.PI) a -= Math.PI * 2
@@ -31,6 +51,39 @@ function wrapAngle(a: number): number {
 function angleLerp(a: number, b: number, t: number): number {
   return a + wrapAngle(b - a) * t
 }
+
+/**
+ * The sit, as joint angles rather than as one body rotation.
+ *
+ * A dog sitting is not a dog pitched backward: the hocks fold flat under him,
+ * the front legs stay vertical under a chest that has risen, and the tail comes
+ * down and sweeps along the ground. He sits at every hazard-wait — story rule 2,
+ * the most visible thing in the game — so it has to be a real pose.
+ */
+const SIT = {
+  bodyPitch: -0.52, // chest up, croup down; the body pivot is AT the croup
+  drop: 0.135, // and the whole animal settles by this much onto his haunches
+  front: [0.52, -0.06, 0.0] as [number, number, number], // U, L, P offsets
+  rear: [0.95, -0.62, 0.62] as [number, number, number],
+  tail: [1.05, -0.25, -0.2] as [number, number, number],
+}
+
+/**
+ * The three look-back variants, and what makes them VISIBLY different rather
+ * than three timings of the same move. Gate 3 asks for three that read apart in
+ * a single recording, so they differ in the body, not only in the head.
+ */
+const LOOK_BACKS = [
+  // A — the glance. Head and neck only, over the shoulder, without breaking
+  // stride. The cheapest and by far the most frequent.
+  { duration: 0.85, neck: 0.42, head: 0.66, bodyYaw: 0, pitch: 0.06, tailRate: 7, tailAmp: 0.34, pawLift: 0 },
+  // B — the check. He swings his hindquarters round under the turn and lifts a
+  // forepaw, which is the shape a dog makes when he is deciding whether to wait.
+  { duration: 1.15, neck: 0.55, head: 0.72, bodyYaw: 0.34, pitch: -0.02, tailRate: 5, tailAmp: 0.5, pawLift: 0.055 },
+  // C — the stop. Full quarter-turn back toward the boy, head level, tail
+  // sweeping hard and high, held long enough to be an invitation.
+  { duration: 1.6, neck: 0.7, head: 0.85, bodyYaw: 0.95, pitch: 0.14, tailRate: 11, tailAmp: 0.62, pawLift: 0 },
+]
 
 type NodePhase = 'main' | 'exit-turn' | 'exit-hold' | 'release' | 'nm-beat' | 'nm-escape'
 
@@ -47,6 +100,7 @@ interface DogState {
   // trot
   nextLookBackAt: number
   lookBackUntil: number
+  lookBackVariant: number
   surge: boolean
   caughtCooldownUntil: number
   gentleUntil: number
@@ -75,8 +129,15 @@ interface DogState {
   sit: number
   headPitch: number
   animSpeed: number
+  cmdSpeed: number
   legPhase: number
   tailPhase: number
+  tailAmp: number
+  tailRate: number
+  bodyYaw: number
+  lastHeading: number
+  meshY: number | null
+  breath: number
 }
 
 function makeState(): DogState {
@@ -92,6 +153,7 @@ function makeState(): DogState {
     heading: 0,
     nextLookBackAt: 2,
     lookBackUntil: -1,
+    lookBackVariant: 0,
     surge: false,
     caughtCooldownUntil: 0,
     gentleUntil: -1,
@@ -114,37 +176,54 @@ function makeState(): DogState {
     sit: 0,
     headPitch: 0,
     animSpeed: 0,
+    cmdSpeed: 0,
     legPhase: 0,
     tailPhase: 0,
+    tailAmp: 0.3,
+    tailRate: 5,
+    bodyYaw: 0,
+    lastHeading: 0,
+    meshY: null,
+    breath: 0,
   }
 }
 
 export function Dog() {
-  const root = useRef<THREE.Group>(null)
-  const body = useRef<THREE.Group>(null)
-  const head = useRef<THREE.Group>(null)
-  const tail = useRef<THREE.Group>(null)
-  const legFL = useRef<THREE.Group>(null)
-  const legFR = useRef<THREE.Group>(null)
-  const legBL = useRef<THREE.Group>(null)
-  const legBR = useRef<THREE.Group>(null)
+  const holder = useRef<THREE.Group>(null)
   const st = useRef(makeState()).current
 
-  const mats = useMemo(
-    () => ({
-      coat: new THREE.MeshLambertMaterial({ color: '#8f8b84' }),
-      headM: new THREE.MeshLambertMaterial({ color: '#98948c' }),
-      dark: new THREE.MeshLambertMaterial({ color: '#6f6b64' }),
-      leg: new THREE.MeshLambertMaterial({ color: '#7a766f' }),
-      collar: new THREE.MeshLambertMaterial({ color: COLLAR_RED }),
-    }),
-    [],
+  const rig = useMemo(() => buildDogRig(), [])
+  const rest = useMemo(() => dogRest(), [])
+  const gait = useMemo(() => new Gait(DOG_GAIT), [])
+  const chains = useMemo<Chain[]>(
+    () =>
+      DOG_LEGS.map((leg) => ({
+        root: rig.joints[leg + 'U'],
+        mid: rig.joints[leg + 'L'],
+        l1: rest[leg + 'U'].pos.distanceTo(rest[leg + 'L'].pos),
+        l2: rest[leg + 'L'].pos.distanceTo(rest[leg + 'P'].pos),
+        restDir2: new THREE.Vector3(0, -1, 0),
+        // A foreleg bends BACK at the elbow and a hind leg bends FORWARD at the
+        // stifle. This is the difference D27 spent an iteration on: the hock is
+        // the joint that separates a dog's back leg from a cat's at a glance,
+        // and a solver free to pick its own bend would lose it on frame one.
+        pole: leg[0] === 'f' ? -1 : 1,
+      })),
+    [rig, rest],
   )
-
+  /** Rest height of each pastern joint with the paw flat. Measured, not guessed. */
+  const pawLift = useMemo(() => DOG_LEGS.map((l) => rest[l + 'P'].pos.y), [rest])
+  const legReach = useMemo(() => chains.map((c) => c.l1 + c.l2), [chains])
+  const hipY = useMemo(() => DOG_LEGS.map((l) => rest[l + 'U'].pos.y), [rest])
+  const restP = useMemo(() => DOG_LEGS.map((l) => rest[l + 'P'].quat.clone()), [rest])
+  /** The body joint's authored LOCAL rest transform, which the sit moves from. */
+  const bodyRest = useMemo(
+    () => ({ pos: rig.joints.body.position.clone(), rot: rig.joints.body.rotation.clone() }),
+    [rig],
+  )
   useFrame((_, delta) => {
     const route = world.route
-    const g = root.current
-    if (!world.ready || !route || !g) return
+    if (!world.ready || !route) return
     const dt = Math.min(Math.max(delta, 0), 0.05)
     st.clock += dt
     const player = world.player
@@ -188,14 +267,31 @@ export function Dog() {
     let sitTarget = 0
     let moveV = 0
     let turnRate = 9
+    // Look-back staging, read by the rig below. Every look-back in the game —
+    // the authored node and the ones the trot schedules for itself — comes out
+    // of the same three variants, so the pattern reads as behaviour.
+    let neckShare = 0.38
+    let lbPitch = 0
+    let lbTailRate = 0
+    let lbTailAmp = 0
+    let lbPawLift = 0
+    let bodyYawTarget = 0
 
     const distToPlayer = st.pos.distanceTo(player.pos)
     const toPlayerYaw = Math.atan2(player.pos.x - st.pos.x, player.pos.z - st.pos.z)
 
+    /** Ramp toward a commanded pace instead of jumping to it. */
+    const pace = (want: number): number => {
+      const lo = st.cmdSpeed - DECEL * dt
+      const hi = st.cmdSpeed + ACCEL * dt
+      st.cmdSpeed = Math.max(lo, Math.min(hi, want))
+      return Math.max(0, st.cmdSpeed)
+    }
+
     const glance = (): boolean => {
       if (st.clock >= st.nextGlanceAt) {
-        st.glanceUntil = st.clock + 0.9 + Math.random() * 0.5
-        st.nextGlanceAt = st.clock + 4 + Math.random() * 3
+        st.glanceUntil = st.clock + 0.9 + rand() * 0.5
+        st.nextGlanceAt = st.clock + 4 + rand() * 3
       }
       return st.clock < st.glanceUntil
     }
@@ -218,6 +314,13 @@ export function Dog() {
       st.s = rn.s0
       st.pos.copy(rn.points[0])
       st.sniffPos.copy(rn.points[0])
+      st.meshY = null
+      gait.reset(st.pos, st.heading, (x, z, y) => {
+        const a = artGround(x, z)
+        if (a !== null) return a
+        const s = sampleGround(x, z, y)
+        return s && s.walkable ? s.y : y
+      })
       if (rn.node.type === 'trot') st.nextLookBackAt = st.clock + 2
     }
 
@@ -261,8 +364,8 @@ export function Dog() {
               headPitchTarget = 0.5
               if (st.clock >= st.sniffPauseUntil) {
                 if (!st.sniffActive) {
-                  const ang = Math.random() * Math.PI * 2
-                  const r = 0.6 + Math.random() * 1.9
+                  const ang = rand() * Math.PI * 2
+                  const r = 0.6 + rand() * 1.9
                   st.sniffTarget.set(at.x + Math.sin(ang) * r, at.y, at.z + Math.cos(ang) * r)
                   st.sniffActive = true
                 }
@@ -271,7 +374,7 @@ export function Dog() {
                 const d = _tmp.length()
                 if (d < 0.08) {
                   st.sniffActive = false
-                  st.sniffPauseUntil = st.clock + 0.6 + Math.random() * 1.6
+                  st.sniffPauseUntil = st.clock + 0.6 + rand() * 1.6
                 } else {
                   desiredHeading = Math.atan2(_tmp.x, _tmp.z)
                   st.sniffPos.addScaledVector(_tmp.normalize(), Math.min(0.8 * dt, d))
@@ -359,19 +462,23 @@ export function Dog() {
             st.lbPicked = true
             st.lbVariant = st.lbCount % 3
             st.lbCount++
-            st.lbDuration = st.lbVariant === 2 ? 1.3 : 0.9
+            st.lbDuration = LOOK_BACKS[st.lbVariant].duration
           }
+          const v = LOOK_BACKS[st.lbVariant]
           const t = st.clock - st.nodeStart
           route.directionAt(rn.s0, _dir)
-          const routeYaw = Math.atan2(_dir.x, _dir.z)
+          desiredHeading = Math.atan2(_dir.x, _dir.z)
           lookTarget = 1
-          if (st.lbVariant === 2) {
-            // C: full stop, body quarter-turn toward the player, beat, turn back
-            desiredHeading = t < st.lbDuration - 0.35 ? angleLerp(routeYaw, toPlayerYaw, 0.6) : routeYaw
-          } else {
-            // A: head-turn only. B: head-turn + hindquarters shift (in anim below)
-            desiredHeading = routeYaw
-          }
+          // The turn eases in and back out across the beat rather than snapping
+          // to a held pose: what separates the three is the shape of the whole
+          // move, not the angle at its peak.
+          const shape = Math.sin(Math.PI * THREE.MathUtils.clamp(t / st.lbDuration, 0, 1))
+          neckShare = v.neck / (v.neck + v.head)
+          lbPitch = v.pitch
+          lbTailRate = v.tailRate
+          lbTailAmp = v.tailAmp
+          bodyYawTarget = v.bodyYaw * shape
+          lbPawLift = v.pawLift * shape
           if (t >= st.lbDuration) advance()
           break
         }
@@ -385,7 +492,9 @@ export function Dog() {
           if (!st.surge && distToPlayer <= CATCH_DIST && st.clock >= st.caughtCooldownUntil) {
             st.surge = true
             st.caughtCooldownUntil = st.clock + 4
-            st.lookBackUntil = st.clock + 0.8
+            // Caught up, so he gives the boy the big one: variant C, the stop.
+            st.lookBackVariant = 2
+            st.lookBackUntil = st.clock + LOOK_BACKS[2].duration
           }
           if (st.surge) {
             target = rn.s1
@@ -393,15 +502,30 @@ export function Dog() {
           }
           // scheduled look-backs: one ~2 s after the node starts, then every 8-14 s
           if (st.clock >= st.nextLookBackAt && st.clock >= st.lookBackUntil) {
-            st.lookBackUntil = st.clock + 0.8
-            st.nextLookBackAt = st.clock + 8 + Math.random() * 6
+            // A and B while he is moving; C belongs to a full stop.
+            st.lookBackVariant = st.lbCount % 2
+            st.lbCount++
+            st.lookBackUntil = st.clock + LOOK_BACKS[st.lookBackVariant].duration
+            st.nextLookBackAt = st.clock + 8 + rand() * 6
           }
           let sp = cap
           if (st.clock < st.gentleUntil) sp = Math.min(sp, 2.2)
           if (st.clock < st.lookBackUntil) {
-            sp = Math.min(sp, 1.2)
+            const v = LOOK_BACKS[st.lookBackVariant]
+            // He slows to look, and variant C stops him outright: a dog does not
+            // check over his shoulder at full trot.
+            sp = Math.min(sp, st.lookBackVariant === 2 ? 0.15 : 1.2)
             lookTarget = 1
+            const left = st.lookBackUntil - st.clock
+            const shape = Math.sin(Math.PI * THREE.MathUtils.clamp(1 - left / v.duration, 0, 1))
+            neckShare = v.neck / (v.neck + v.head)
+            lbPitch = v.pitch
+            lbTailRate = v.tailRate
+            lbTailAmp = v.tailAmp
+            bodyYawTarget = v.bodyYaw * shape
+            lbPawLift = v.pawLift * shape
           }
+          sp = pace(sp)
           const ds = Math.min(sp * dt, Math.max(0, target - st.s)) // never backward
           st.s += ds
           moveV = dt > 0 ? ds / dt : 0
@@ -429,6 +553,7 @@ export function Dog() {
               sp = 1.6
               lookTarget = 1
             }
+            sp = pace(sp)
             const ds = Math.min(sp * dt, Math.max(0, rn.s1 - st.s))
             st.s += ds
             moveV = dt > 0 ? ds / dt : 0
@@ -483,16 +608,20 @@ export function Dog() {
       lookTarget = st.bounceKind === 'subtle' ? Math.max(lookTarget, 0.35) : 1
     }
 
-    // ground snap: stand on walkable ground when there is any, else path height
-    const gs = sampleGround(_pos.x, _pos.z, _pos.y + 0.75)
-    const groundY = gs && gs.walkable ? gs.y : _pos.y
+    // Ground snap onto the ART surface where there is one, so he wades the ford
+    // instead of standing on the water the way the grey box let him.
+    const ag = artGround(_pos.x, _pos.z)
+    const gs = ag === null ? sampleGround(_pos.x, _pos.z, _pos.y + 0.75) : null
+    const groundY = ag !== null ? ag : gs && gs.walkable ? gs.y : _pos.y
     st.pos.set(_pos.x, groundY, _pos.z)
 
     st.heading = angleLerp(st.heading, desiredHeading, 1 - Math.exp(-turnRate * dt))
     st.look += (lookTarget - st.look) * Math.min(1, dt * (lookTarget > st.look ? 10 : 3.5))
     st.sit += (sitTarget - st.sit) * Math.min(1, dt * 4)
     st.headPitch += (headPitchTarget - st.headPitch) * Math.min(1, dt * 6)
-    st.animSpeed += (moveV - st.animSpeed) * Math.min(1, dt * 8)
+    if (moveV <= 0.001) st.cmdSpeed = Math.max(0, st.cmdSpeed - DECEL * dt)
+    st.animSpeed += (moveV - st.animSpeed) * Math.min(1, dt * 9)
+    st.bodyYaw += (bodyYawTarget - st.bodyYaw) * (1 - Math.exp(-9 * dt))
 
     // publish shared state
     world.dog.pos.copy(st.pos)
@@ -501,145 +630,226 @@ export function Dog() {
     world.dog.nodeIndex = st.nodeIndex
     world.dog.s = st.s
     world.dog.lookAtPlayer = st.look
-
-    // ---- cheap grey-box animation ----
-    let hop = 0
-    let tailFast = false
-    if (bouncing && st.bounceKind === 'full') {
-      const bt = (st.clock - st.bounceStart) / 0.7
-      hop = Math.abs(Math.sin(bt * Math.PI * 2)) * 0.13 // two quick hops
-      tailFast = true
+    // ---- the rig ------------------------------------------------------------
+    // The look-back variants swing his hindquarters round under the turn, so
+    // the body's heading is not the route's heading. The footfall plan has to
+    // use the body's: planning against the route while the hips are twenty
+    // degrees off it puts every plant off the line the legs actually reach
+    // along, and that showed up as one diagonal pair sliding and the other not.
+    const heading = st.heading + st.bodyYaw
+    const groundFn = (x: number, z: number, fromY: number) => {
+      const a = artGround(x, z)
+      if (a !== null) return a
+      const g = sampleGround(x, z, fromY)
+      return g && g.walkable ? g.y : fromY
     }
-
-    g.visible = world.dog.visible
-    g.position.set(st.pos.x, st.pos.y + hop, st.pos.z)
-    g.rotation.y = st.heading
 
     const frozen = activity === 'stare' // exit hold: rigid, tail still, head fixed
-    const speedN = THREE.MathUtils.clamp(st.animSpeed / 1.2, 0, 1)
-    if (st.animSpeed > 0.05 && !frozen) st.legPhase += dt * (4 + st.animSpeed * 2.6)
-    const swing = Math.sin(st.legPhase) * 0.6 * speedN
-    if (legFL.current) legFL.current.rotation.x = swing
-    if (legBR.current) legBR.current.rotation.x = swing
-    if (legFR.current) legFR.current.rotation.x = -swing
-    if (legBL.current) legBL.current.rotation.x = -swing
+    const sitting = st.sit > 0.02
 
-    const b = body.current
-    if (b) {
-      const bob = frozen ? 0 : Math.abs(Math.sin(st.legPhase)) * 0.03 * speedN
-      const breathe = frozen ? 0 : Math.sin(st.clock * 1.6) * 0.004
-      b.position.y = bob + breathe - st.sit * 0.03
-      b.rotation.x = -0.35 * st.sit // sit: rear down, chest tilted up ~20 deg
-      let yawOff = 0
-      if (activity === 'near-miss-hold' && st.phase === 'main') {
-        // weight shifts every couple of seconds — alert and playful
-        yawOff = Math.tanh(2.5 * Math.sin(st.clock * 2.6)) * 0.07
-      }
-      if (activity === 'look-back' && st.lbVariant === 1) {
-        // variant B: hindquarters shift under the head-turn
-        const t = THREE.MathUtils.clamp((st.clock - st.nodeStart) / st.lbDuration, 0, 1)
-        yawOff += Math.sin(t * Math.PI) * 0.22
-      }
-      b.rotation.y = yawOff
+    // The bark-bounce: two quick hops off the front, which is what a dog
+    // actually does when he answers. It is cosmetic and never touches the route.
+    let hop = 0
+    let bounceReach = 0
+    if (bouncing && st.bounceKind === 'full') {
+      const bt = (st.clock - st.bounceStart) / 0.7
+      hop = Math.abs(Math.sin(bt * Math.PI * 2)) * 0.11
+      bounceReach = Math.sin(bt * Math.PI * 2) * 0.16
     }
 
-    const h = head.current
-    if (h) {
-      const rel = THREE.MathUtils.clamp(wrapAngle(toPlayerYaw - st.heading), -2.1, 2.1)
-      h.rotation.y = rel * st.look
-      h.rotation.x = st.headPitch * (1 - st.look) // nose-down while sniffing
+    // --- footfalls -----------------------------------------------------------
+    // The planner only runs while he is actually covering ground. Standing,
+    // sitting and the held beats keep the feet exactly where they were put,
+    // which is the whole reason a sitting dog does not shuffle.
+    const yawRate = wrapAngle(heading - st.lastHeading) / Math.max(dt, 1e-4)
+    st.lastHeading = heading
+    gait.update(
+      dt,
+      frozen || sitting ? 0 : st.animSpeed,
+      st.pos,
+      heading,
+      groundFn,
+      yawRate,
+    )
+    if (!sitting && !frozen) {
+      for (const f of gait.feet) {
+        if (f.justPlanted) pushPrint('dog', f.pos.x, f.pos.y, f.pos.z, f.heading)
+      }
     }
 
-    const t = tail.current
-    if (t) {
-      const sitting = st.sit > 0.5
-      let rate: number
-      let amp: number
-      if (frozen) {
-        rate = 0
-        amp = 0
-      } else if (sitting) {
-        rate = 1.4 // slow sweep along the ground
-        amp = 0.5
-      } else if (st.animSpeed > 0.3) {
-        rate = 9 // up and swishing at trot
-        amp = 0.35
-      } else {
-        rate = 5
-        amp = 0.28
+    const g2 = holder.current
+    if (!g2) return
+    g2.visible = world.dog.visible
+
+    // The body rides the planted feet, so a trot over broken ground rises and
+    // falls with what he is standing on rather than with a terrain sample.
+    let ceiling = -Infinity
+    for (const f of gait.feet) if (f.planted) ceiling = Math.max(ceiling, f.pos.y)
+    if (ceiling === -Infinity) ceiling = st.pos.y
+    // Same as the boy: the chest drops as the stride opens and comes back up as
+    // the diagonal passes under him, twice a cycle. That is what a trot is.
+    // Used directly, not smoothed. The solve is already a smooth function of the
+    // gait phase, and low-passing it at 26/s put the body up to 15 mm away from
+    // the height the legs had just been solved for — which is a paw hanging
+    // 15 mm off the ground for the last fifth of every stance, on every foot.
+    st.meshY = gait.supportHeight(st.pos, heading, hipY, legReach, pawLift, ceiling)
+
+    st.breath += dt
+    const speedN = THREE.MathUtils.clamp(st.animSpeed / 2.2, 0, 1)
+    // No authored bob. The chest already rises and falls because
+    // `supportHeight` drops it as each diagonal's stride opens and lets it back
+    // up as the pair passes underneath — that IS the trot's bounce, at the
+    // amplitude his own legs imply. An 18 mm sine ON TOP of it was pure error:
+    // the legs were solved for one body height and then the body was moved to
+    // another, and the paws came off the ground by exactly that much.
+    const breathe = frozen || speedN > 0.05 ? 0 : Math.sin(st.breath * 2.1) * 0.006
+
+    g2.position.set(st.pos.x, st.meshY + hop, st.pos.z)
+    g2.rotation.y = heading
+
+    const body = rig.joints.body
+    body.position.set(
+      bodyRest.pos.x,
+      bodyRest.pos.y - st.sit * SIT.drop + breathe,
+      bodyRest.pos.z,
+    )
+    body.rotation.set(
+      bodyRest.rot.x + st.sit * SIT.bodyPitch + bounceReach * 0.5,
+      0,
+      frozen ? 0 : Math.sin(gait.phase * Math.PI * 2) * 0.035 * speedN,
+    )
+    rig.group.updateMatrixWorld(true)
+
+    // --- legs ----------------------------------------------------------------
+    _fwdWorld.set(Math.sin(heading), 0, Math.cos(heading))
+    for (let i = 0; i < DOG_LEGS.length; i++) {
+      const leg = DOG_LEGS[i]
+      const f = gait.feet[i]
+      _foot.set(f.pos.x, f.pos.y + pawLift[i], f.pos.z)
+      // A hop takes the whole animal off the ground, so the legs tuck under him
+      // rather than stretching down after feet that are no longer load-bearing.
+      if (hop > 0) _foot.y += hop * 0.8
+      if (i === 0 && lbPawLift > 0) _foot.y += lbPawLift
+      solveChain(chains[i], _foot, _fwdWorld)
+      // The paw keeps the orientation it has at rest, turned by his heading, so
+      // a foot is flat on the ground at every point of the stride instead of
+      // taking whatever angle the leg above it happens to end at.
+      const P = rig.joints[leg + 'P']
+      _q.setFromAxisAngle(AXIS_Y, heading).multiply(restP[i])
+      setWorldQuaternion(P, _q)
+
+      if (st.sit > 0.001) {
+        // Sitting overrides the solve rather than blending against it: a folded
+        // hock is not a stretched one part of the way back.
+        const front = leg[0] === 'f'
+        const set = front ? SIT.front : SIT.rear
+        const names = [leg + 'U', leg + 'L', leg + 'P']
+        for (let k = 0; k < 3; k++) {
+          const j = rig.joints[names[k]]
+          const r = rig.rest[names[k]]
+          // front legs stand under a chest that has risen, so they take the
+          // body's pitch back out of themselves
+          const extra = front && k === 0 ? -st.sit * SIT.bodyPitch : 0
+          _sitQ.setFromAxisAngle(AXIS_X, r.x + set[k] + extra)
+          j.quaternion.slerp(_sitQ, st.sit)
+        }
       }
-      if (tailFast) {
-        rate = 16
-        amp = 0.5
+    }
+
+    // --- neck and head -------------------------------------------------------
+    // A look-back bends the NECK first; the head only finishes the turn. D27:
+    // a head yawed a hundred degrees on a neck still pointing down the canyon
+    // puts the muzzle out sideways from the skull like a spur.
+    const rel = THREE.MathUtils.clamp(wrapAngle(toPlayerYaw - heading), -2.1, 2.1)
+    const neck = rig.joints.neck
+    const head = rig.joints.head
+    neck.rotation.set(
+      rig.rest.neck.x + st.sit * -0.16 + st.headPitch * 0.45,
+      rig.rest.neck.y + rel * st.look * neckShare,
+      0,
+    )
+    head.rotation.set(
+      rig.rest.head.x + st.headPitch * (1 - st.look) + lbPitch * st.look - bounceReach * 0.8,
+      rig.rest.head.y + rel * st.look * (1 - neckShare),
+      0,
+    )
+
+    // --- the tail ------------------------------------------------------------
+    // Tail language, at trot and at wait, is a Gate 3 must-confirm. It is a
+    // CHAIN: the sweep starts at the croup and arrives at the tip a beat later,
+    // which is the difference between a tail and a stick being waved.
+    let rate: number
+    let amp: number
+    let lift: number
+    if (frozen) {
+      rate = 0
+      amp = 0
+      lift = 0.15 // held out level and still: the stare before the bolt
+    } else if (sitting) {
+      rate = 1.6 // a slow sweep along the ground, and it never stops entirely
+      amp = 0.42
+      lift = -0.55
+    } else if (activity === 'near-miss-hold') {
+      rate = st.phase === 'nm-beat' ? 13 : 8 // high and fast: this is play
+      amp = st.phase === 'nm-beat' ? 0.6 : 0.42
+      lift = 0.22
+    } else if (st.animSpeed > 0.4) {
+      rate = 8.5 + speedN * 3
+      amp = 0.3 + speedN * 0.12
+      lift = 0.1
+    } else {
+      rate = 4.2
+      amp = 0.26
+      lift = 0
+    }
+    if (lbTailRate > 0) {
+      rate = lbTailRate
+      amp = lbTailAmp
+      lift = 0.18
+    }
+    if (bouncing && st.bounceKind === 'full') {
+      rate = 16
+      amp = 0.52
+      lift = 0.25
+    }
+    st.tailRate += (rate - st.tailRate) * (1 - Math.exp(-8 * dt))
+    st.tailAmp += (amp - st.tailAmp) * (1 - Math.exp(-6 * dt))
+    st.tailPhase += dt * st.tailRate
+    for (let i = 0; i < 3; i++) {
+      const j = rig.joints['tail' + (i + 1)]
+      const r = rig.rest['tail' + (i + 1)]
+      // each segment lags the one before it: that lag IS the whip
+      const sweep = Math.sin(st.tailPhase - i * 0.55) * st.tailAmp * (0.45 + i * 0.32)
+      const drop = st.sit * SIT.tail[i]
+      j.rotation.set(r.x + drop - (i === 0 ? lift : lift * 0.4), r.y + sweep, r.z)
+    }
+
+    rig.group.updateMatrixWorld(true)
+    recFrame.dogPaws = gait.feet.map((f, i) => {
+      _foot.setFromMatrixPosition(rig.joints[DOG_LEGS[i] + 'P'].matrixWorld)
+      return {
+        at: [+f.pos.x.toFixed(4), +f.pos.y.toFixed(4), +f.pos.z.toFixed(4)],
+        plant: f.planted ? 1 : 0,
+        leg: DOG_LEGS[i],
+        // The rendered paw, so a leg that could not reach its plant shows up as
+        // a slide rather than as a number nobody looked at.
+        sole: [+_foot.x.toFixed(4), +(_foot.y - pawLift[i]).toFixed(4), +_foot.z.toFixed(4)],
       }
-      st.tailPhase += dt * rate
-      t.rotation.y = Math.sin(st.tailPhase) * amp
-      t.rotation.x = THREE.MathUtils.lerp(0.9, 0.1, st.sit) // up at trot, dropped when sitting
+    })
+    recFrame.dogAnim = {
+      sit: +st.sit.toFixed(3),
+      look: +st.look.toFixed(3),
+      tailAmp: +st.tailAmp.toFixed(3),
+      tailRate: +st.tailRate.toFixed(2),
+      lbVariant: activity === 'look-back' ? st.lbVariant : -1,
+      speed: +st.animSpeed.toFixed(3),
+      gaitPhase: +gait.phase.toFixed(4),
     }
   })
 
-  // Grey-box dog, ~0.5 m at the shoulder, nose toward +Z. All greys except
-  // the collar band, which must read from behind and the side.
   return (
-    <group ref={root}>
-      <group ref={body}>
-        {/* torso */}
-        <mesh material={mats.coat} position={[0, 0.37, -0.02]}>
-          <boxGeometry args={[0.22, 0.26, 0.56]} />
-        </mesh>
-        {/* neck, raised above the shoulder line so the collar clears the torso */}
-        <mesh material={mats.coat} position={[0, 0.52, 0.24]}>
-          <boxGeometry args={[0.11, 0.18, 0.11]} />
-        </mesh>
-        {/* the collar — the only red in the game: #D0342C */}
-        <mesh material={mats.collar} position={[0, 0.555, 0.24]}>
-          <cylinderGeometry args={[0.085, 0.085, 0.05, 12]} />
-        </mesh>
-        {/* head group: pivot at the neck so yaw/pitch read as the head turning */}
-        <group ref={head} position={[0, 0.6, 0.27]}>
-          <mesh material={mats.headM} position={[0, 0.06, 0.04]}>
-            <boxGeometry args={[0.17, 0.15, 0.17]} />
-          </mesh>
-          {/* muzzle */}
-          <mesh material={mats.dark} position={[0, 0.02, 0.17]}>
-            <boxGeometry args={[0.08, 0.07, 0.12]} />
-          </mesh>
-          {/* ears */}
-          <mesh material={mats.dark} position={[-0.055, 0.17, 0]} rotation={[0, 0, 0.12]}>
-            <coneGeometry args={[0.035, 0.09, 6]} />
-          </mesh>
-          <mesh material={mats.dark} position={[0.055, 0.17, 0]} rotation={[0, 0, -0.12]}>
-            <coneGeometry args={[0.035, 0.09, 6]} />
-          </mesh>
-        </group>
-        {/* tail: thin and expressive, pivot at the rump */}
-        <group ref={tail} position={[0, 0.44, -0.3]}>
-          <mesh material={mats.coat} position={[0, 0, -0.13]}>
-            <boxGeometry args={[0.04, 0.04, 0.26]} />
-          </mesh>
-        </group>
-        {/* legs: pivot at the hip so rotation.x swings like a limb */}
-        <group ref={legFL} position={[-0.08, 0.26, 0.18]}>
-          <mesh material={mats.leg} position={[0, -0.13, 0]}>
-            <boxGeometry args={[0.07, 0.26, 0.07]} />
-          </mesh>
-        </group>
-        <group ref={legFR} position={[0.08, 0.26, 0.18]}>
-          <mesh material={mats.leg} position={[0, -0.13, 0]}>
-            <boxGeometry args={[0.07, 0.26, 0.07]} />
-          </mesh>
-        </group>
-        <group ref={legBL} position={[-0.08, 0.26, -0.2]}>
-          <mesh material={mats.leg} position={[0, -0.13, 0]}>
-            <boxGeometry args={[0.07, 0.26, 0.07]} />
-          </mesh>
-        </group>
-        <group ref={legBR} position={[0.08, 0.26, -0.2]}>
-          <mesh material={mats.leg} position={[0, -0.13, 0]}>
-            <boxGeometry args={[0.07, 0.26, 0.07]} />
-          </mesh>
-        </group>
-      </group>
+    <group ref={holder}>
+      <primitive object={rig.group} />
     </group>
   )
 }

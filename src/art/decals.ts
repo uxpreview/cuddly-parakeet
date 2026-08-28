@@ -269,24 +269,16 @@ export interface PrintStep {
   fade?: number
 }
 
-export function makePrintTrail(
-  steps: PrintStep[],
-  kind: 'dog' | 'boy',
-): THREE.InstancedMesh | null {
-  if (steps.length === 0) return null
-  // Larger than the anatomy wants. Beyond about three metres a print smaller
-  // than this is averaged away by the sampler entirely — measured, the trail
-  // simply stopped existing past the near field — and the trail is half the
-  // navigation system.
-  const size = kind === 'dog' ? 0.2 : 0.235
-  const geom = new THREE.PlaneGeometry(size * (kind === 'dog' ? 0.95 : 0.66), size)
-  geom.rotateX(-Math.PI / 2)
-
+/**
+ * The print material. One place, so the art bible's stamped trail and the
+ * gameplay trail spawned by footfalls cannot drift apart.
+ */
+export function printMaterial(kind: 'dog' | 'boy', map: THREE.Texture): THREE.ShaderMaterial {
   const mat = new THREE.ShaderMaterial({
     vertexShader: PRINT_VERT,
     fragmentShader: PRINT_FRAG,
     uniforms: {
-      uMap: { value: kind === 'dog' ? dogPrintTexture() : boyPrintTexture() },
+      uMap: { value: map },
       uColor: { value: srgbTint(CH1.limestoneShadow.hex) },
       // Eased back from 0.72/0.44. The trail measured 30.4% contrast against
       // the gravel at the near end, which overshot: it went from invisible
@@ -300,6 +292,23 @@ export function makePrintTrail(
   })
   mat.name = 'print:' + kind
   multiplyBlend(mat)
+  return mat
+}
+
+export function makePrintTrail(
+  steps: PrintStep[],
+  kind: 'dog' | 'boy',
+): THREE.InstancedMesh | null {
+  if (steps.length === 0) return null
+  // Larger than the anatomy wants. Beyond about three metres a print smaller
+  // than this is averaged away by the sampler entirely — measured, the trail
+  // simply stopped existing past the near field — and the trail is half the
+  // navigation system.
+  const size = kind === 'dog' ? 0.2 : 0.235
+  const geom = new THREE.PlaneGeometry(size * (kind === 'dog' ? 0.95 : 0.66), size)
+  geom.rotateX(-Math.PI / 2)
+
+  const mat = printMaterial(kind, kind === 'dog' ? dogPrintTexture() : boyPrintTexture())
 
   const mesh = new THREE.InstancedMesh(geom, mat, steps.length)
   const m = new THREE.Matrix4()

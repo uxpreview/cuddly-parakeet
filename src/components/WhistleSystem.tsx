@@ -19,6 +19,7 @@ import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { consumeWhistleRequest } from '../game/input'
 import { world } from '../game/world'
+import { now, rand } from '../game/clock'
 
 // ---------------------------------------------------------------------------
 // shared helpers
@@ -97,18 +98,18 @@ export function WhistleSystem() {
   }, [geometry, materials])
 
   useFrame(() => {
-    const now = performance.now()
+    const t = now()
     const w = world.whistle
 
     // 1. Requests. Within cooldown they are ignored outright — no queue.
-    if (consumeWhistleRequest() && now - w.lastAt >= w.cooldownMs) {
-      w.lastAt = now
+    if (consumeWhistleRequest() && t - w.lastAt >= w.cooldownMs) {
+      w.lastAt = t
       // Authored answer delay: half a second to a second and a half.
-      w.pendingAnswerAt = now + 500 + Math.random() * 1000
+      w.pendingAnswerAt = t + 500 + rand() * 1000
       // Boy cue: subtle ground ring at the player, so the press reads silently.
       const slot = slots.current.find((s) => !s.active) ?? slots.current[0]
       slot.active = true
-      slot.start = now
+      slot.start = t
       const mesh = meshes.current[slots.current.indexOf(slot)]
       if (mesh) {
         mesh.position.set(
@@ -120,7 +121,7 @@ export function WhistleSystem() {
     }
 
     // 2. The answer fires from wherever the dog actually is right now.
-    if (w.pendingAnswerAt !== 0 && now >= w.pendingAnswerAt) {
+    if (w.pendingAnswerAt !== 0 && t >= w.pendingAnswerAt) {
       w.answerPos.copy(world.dog.pos)
       w.answerSeq++
       w.pendingAnswerAt = 0
@@ -131,7 +132,7 @@ export function WhistleSystem() {
     for (let i = 0; i < slots.current.length; i++) {
       const s = slots.current[i]
       if (!s.active) continue
-      if (!animateRing(meshes.current[i], materials[i], BOY_RING, now - s.start)) {
+      if (!animateRing(meshes.current[i], materials[i], BOY_RING, t - s.start)) {
         s.active = false
       }
     }
@@ -185,16 +186,16 @@ function rollBirds(): BirdParams[] {
   const birds: BirdParams[] = []
   for (let i = 0; i < BIRDS_PER_CUE; i++) {
     // Spread azimuths around the circle with jitter so birds part evenly.
-    const az = (i / BIRDS_PER_CUE) * Math.PI * 2 + (Math.random() - 0.5) * 0.9
+    const az = (i / BIRDS_PER_CUE) * Math.PI * 2 + (rand() - 0.5) * 0.9
     birds.push({
       az,
-      rise: 10 + Math.random() * 4,
-      drift: 1.6 + Math.random() * 1.8,
-      wobAmp: 0.25 + Math.random() * 0.35,
-      wobFreq: 3 + Math.random() * 3,
-      wobPhase: Math.random() * Math.PI * 2,
-      delayMs: Math.random() * BIRD_MAX_DELAY_MS,
-      spin: (Math.random() - 0.5) * 6,
+      rise: 10 + rand() * 4,
+      drift: 1.6 + rand() * 1.8,
+      wobAmp: 0.25 + rand() * 0.35,
+      wobFreq: 3 + rand() * 3,
+      wobPhase: rand() * Math.PI * 2,
+      delayMs: rand() * BIRD_MAX_DELAY_MS,
+      spin: (rand() - 0.5) * 6,
     })
   }
   return birds
@@ -259,7 +260,7 @@ export function WhistleCues() {
   }, [birdGeometry, ringGeometry, birdMaterials, ringMaterials])
 
   useFrame(() => {
-    const now = performance.now()
+    const t = now()
 
     // Spawn on a new answer. Recycle the oldest slot if all are live so
     // overlapping answers can never crash or leak.
@@ -270,7 +271,7 @@ export function WhistleCues() {
         slot = slots.current.reduce((a, b) => (a.start <= b.start ? a : b))
       }
       slot.active = true
-      slot.start = now
+      slot.start = t
       slot.birds = rollBirds()
       const group = groups.current[slots.current.indexOf(slot)]
       if (group) group.position.copy(world.whistle.answerPos)
@@ -286,7 +287,7 @@ export function WhistleCues() {
         group.visible = false
         continue
       }
-      const elapsed = now - slot.start
+      const elapsed = t - slot.start
       if (elapsed >= totalMs) {
         slot.active = false
         group.visible = false
