@@ -74,4 +74,114 @@ only lift and rate carry it, and 1.6 rad/s is one sweep per four seconds.
 
 ### What changed in response
 
-*(iteration 2, below)*
+See iteration 2.
+
+---
+
+## Iteration 2 — `renders/g3-02/`
+
+Every number below is measured through the game's own camera at 960x540.
+
+### Must-confirm 5 — the whistle correlate
+
+| | before | after |
+|---|---|---|
+| bird colour | `CH1.pine`, fired at a pine treeline | `BOY.hair` |
+| dust colour | `CH1.path`, lifted off the path | `CH1.limestoneShadow` |
+| bird span at 20 m | ~6 px | **21.0 px** (11 px floor, same argument as D21) |
+| bird rise | 7-14 m, into the canopy | 11-19 m, clear into sky |
+| dog's own answer at trot | `flick`, 0.45 s of head yaw | full bark-bounce, and he **stops** |
+
+`story.md` gives Chapter 1 answers that are "clean, close and honest", so a
+canyon answer that cannot be seen is not a small miss.
+
+### Must-confirm 1 — weight and the settle
+
+The boy's **standing slack is 0.0000 m**: his legs are exactly as long as his
+hip is high (`tools/dev/legroom.mjs`). That is correct anatomy, and it means the
+support solve is always working against full extension, so every stance width
+asks the body down. With `maxDip` at 0.12 he spent the whole 0.8 s of his
+closing step 120 mm *into the ground* and then popped back out in one frame.
+
+|  | before | after |
+|---|---|---|
+| worst single-frame support step, at rest | 120.1 mm | **14.2 mm** |
+| at-rest support range | 120.1 mm | **55.1 mm** |
+
+Four changes: a landing foot ramps into the constraint; a foot that would pull
+the body past the dip budget stops voting instead of being clamped (a walker
+lets the heel lift, he does not squat); the height is rate-limited before the
+solve, never after it; and the boy's `maxDip` drops to 0.055.
+
+Both actors also now have the blob shadow and contact darkening
+`art-direction.md` has always required. **Neither gameplay actor had ever had
+one** — the art bible placed them by hand in `ArtBible.tsx` and the game never
+did. And the arm swing, 0.62 rad about the camera's own depth axis, now carries
+a lateral component.
+
+### Must-confirm 3 — the look-backs
+
+Separated by what the LEGS do, which survives at any size, rather than by
+degrees of hip yaw which do not:
+
+| | A, the glance | B, the check | C, the stop |
+|---|---|---|---|
+| speed cap | 1.2 m/s, keeps trotting | **0.18 m/s, pulls up** | 0.15 m/s, stops |
+| body yaw | 0 | 0.62 | 0.95 |
+| forepaw | — | held up, 0.13 | — |
+| duration | 0.85 s | 1.15 s | 1.6 s |
+
+### Must-confirm 4 — the near-miss
+
+- The escape was `sp = 2.8`, flat to three digits, for 10.2 s. It has a shape
+  now — hard off the mark, easing as the gap opens, given back at every
+  look-back. Peak unchanged; average lower. `game-design.md` is explicit that
+  the fix for "looks like the game cheating" is staging and timing, not speed.
+- He looked back **once** in six seconds of escape. Now every 2.2-3.6 s.
+- The 3.6 s hold was pinned to three decimals. He has a weight shift, carried on
+  the body over his planted feet rather than on the root, so the idle is not
+  bought back in foot-slide.
+- The play-bow no longer tucks the collar under his own back: the neck comes
+  back up out of the bow, further than the body went down.
+
+### The banked collar
+
+Floors raised to 4.0 px radius and 4.4 px stroke. The short axis is the one that
+fails, and it fails at every range, not only far away. `tools/dev/collarrange.mjs`:
+
+| range | bbox | sat | | range | bbox | sat |
+|---|---|---|---|---|---|---|
+| 3.1 m | 12x10 | 68% | | 21.6 m | 5x4 | 67% |
+| 5.1 m | 10x8 | 66% | | 26.6 m | 5x5 | 63% |
+| 8.4 m | 7x5 | 69% | | 31.6 m | 5x6 | 66% |
+| 13.5 m | 6x5 | 65% | | 35.9 m | 6x7 | 65% |
+| 17.6 m | 5x4 | 67% | | | | |
+
+Never under five pixels wide, never zero, never fewer than sixteen red pixels,
+against iteration 1's 1 px and 0 px.
+
+### Staging
+
+- A waiting dog sits **beside** the route, not on it. The ford had his paws at
+  y=270 and the boy's crown at y=269 — the Gate 2 hero-shot fusion, reproduced
+  by the actor rather than by a camera. Derived from the route, so chapters 2 to
+  4 inherit it without engine work.
+- The dog lays prints from his **fore feet only**. A trotting dog direct-registers
+  — the hind foot lands in the fore print. 212 prints in 15.8 s at a 26.9 cm gap
+  was an unbroken serrated ribbon, which is waypoint grammar.
+- The takes open closer and whistle earlier so the beats play where they read.
+  The 20-45 m lead discipline (`game-design.md`) is untouched.
+
+### Not addressed in this iteration, and why
+
+- **Dog-against-ground value separation.** The palette is settled and I was told
+  not to re-open it. The two changes that bear on findability were made instead:
+  the collar floor, and a contact shadow that had never existed. Re-measured
+  below.
+- **The ford water does not break where he wades it.** Real, and out of scope
+  for a gate about the two characters. Carried forward.
+- **The boy has no hands.** Modelling, not animation. Carried forward.
+
+### Measured after re-recording
+
+*(pending)*

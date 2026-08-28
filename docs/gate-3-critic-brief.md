@@ -51,6 +51,14 @@ Under the renders directory named in the invitation:
   his staging from the wide ones.
 - `<take>-desktop.json` — the per-frame probe: positions, activity, gait phase,
   foot plant states, the prints laid, tail amplitude and rate, look-back variant.
+  Also, and worth using rather than eyeballing:
+  - `cue` — the whistle answer's correlate: birds and puffs live, the widest
+    bird's span in pixels, and its opacity.
+  - `boyY` — the height the camera frames the boy at, his settle dip, and how
+    many feet are planted. A step here with him at rest is a camera jolt.
+  - `boyArms` — his hands in his own frame. `across` is the part of an arm swing
+    a camera sitting behind him can see; the fore-aft part is nearly all depth.
+  - `dogScreen` — where he is on screen and how tall, in pixels.
 - `<take>-desktop.webm` — the recording itself, if you can read it. You probably
   cannot; the sheets exist because of that.
 
