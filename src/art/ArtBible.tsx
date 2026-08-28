@@ -4,7 +4,7 @@ import * as THREE from 'three'
 import { loadChapter } from '../game/loadChapter'
 import { world, sampleGround } from '../game/world'
 import { buildArtTerrain } from './artTerrain'
-import { buildBoy, buildDog, BOY_WALK, DOG_LOOK_BACK } from './characters'
+import { buildBoy, buildDog, BOY_WALK, DOG_LOOK_BACK, DOG_NEUTRAL } from './characters'
 import { makeBlobShadow, makePrintTrail } from './decals'
 import { setPixelAngle } from './RampMaterial'
 import { CH1_LIGHT } from './palette'
@@ -30,7 +30,15 @@ import {
 
 const CHAPTER = 'ch01-canyon'
 
-function Scene({ shot, onShots }: { shot: string; onShots: (s: Shot[]) => void }) {
+function Scene({
+  shot,
+  dogPose,
+  onShots,
+}: {
+  shot: string
+  dogPose: string | null
+  onShots: (s: Shot[]) => void
+}) {
   const camera = useThree((s) => s.camera)
   const gl = useThree((s) => s.gl)
 
@@ -61,6 +69,7 @@ function Scene({ shot, onShots }: { shot: string; onShots: (s: Shot[]) => void }
       // manifest's own, and a ford shot staged thirty metres downstream of the
       // ford is a picture of a river. Only the open canyon staging roams.
       shot === 'town-reveal' || shot === 'ford' ? 7 : 40,
+      (x, y, z) => terrain.skyViewAt(x, y, z),
     )
     const shots = buildShots(
       world.art,
@@ -72,6 +81,8 @@ function Scene({ shot, onShots }: { shot: string; onShots: (s: Shot[]) => void }
         },
         STAGE_SAMPLES,
         (x, y, z) => terrain.sunOcclusionAt(x, y, z),
+        34,
+        (x, y, z) => terrain.skyViewAt(x, y, z),
       ),
       world.manifest.cameras,
     )
@@ -87,7 +98,12 @@ function Scene({ shot, onShots }: { shot: string; onShots: (s: Shot[]) => void }
     boy.rotation.y = stage.boy.heading
     group.add(boy)
 
-    const dog = buildDog(DOG_LOOK_BACK, dogOcc)
+    // The look-back is the staged pose, but a character has to be judgeable in
+    // a neutral one too: a head yawed a hundred degrees hides the neck, the
+    // collar and half the silhouette, and that is exactly the frame the last
+    // pass tried to read a whole model from. `?dogPose=neutral` is for the
+    // turntable in tools/dev/dogturn.mjs and for nothing else.
+    const dog = buildDog(dogPose === 'neutral' ? DOG_NEUTRAL : DOG_LOOK_BACK, dogOcc)
     dog.position.copy(stage.dog.at)
     dog.rotation.y = stage.dog.heading
     group.add(dog)
@@ -122,7 +138,7 @@ function Scene({ shot, onShots }: { shot: string; onShots: (s: Shot[]) => void }
     if (boyTrail) group.add(boyTrail)
 
     return { group, shots, art }
-  }, [terrain, shot])
+  }, [terrain, shot, dogPose])
 
   useEffect(() => {
     if (built) onShots(built.shots)
@@ -171,6 +187,7 @@ export function ArtBible() {
   const [shots, setShots] = useState<Shot[]>([])
   const params = new URLSearchParams(location.search)
   const shot = params.get('shot') ?? 'hero'
+  const dogPose = params.get('dogPose')
   const bare = params.has('bare')
 
   // Dev-only key-light override, so the sun angle can be MEASURED rather than
@@ -198,7 +215,7 @@ export function ArtBible() {
         camera={{ fov: 55, near: 0.15, far: 1400 }}
         style={{ touchAction: 'none' }}
       >
-        {ready && <Scene shot={shot} onShots={setShots} />}
+        {ready && <Scene shot={shot} dogPose={dogPose} onShots={setShots} />}
       </Canvas>
       {!bare && shots.length > 0 && <ShotBar shots={shots} current={shot} />}
     </>

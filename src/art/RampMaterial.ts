@@ -51,7 +51,9 @@ varying vec3 vWorldPos;
 
 #ifdef USE_MIN_SCREEN
   uniform vec3 uMinScreenCenter;
+  uniform vec3 uMinScreenAxis;
   uniform float uMinScreenPx;
+  uniform float uMinScreenWidthPx;
   /** Radians of vertical FOV per pixel: 2*tan(fov/2) / viewportHeight. */
   uniform float uPixelAngle;
 #endif
@@ -106,12 +108,29 @@ void main() {
     //
     // So the band holds a minimum radius in pixels and grows only when it is
     // below it. Close up the factor is exactly 1 and the geometry is untouched.
+    //
+    // TWO floors, not one, because a band has two dimensions and only one of
+    // them is its radius. Narrowing the collar from a 5.2 cm sleeve to a 3 cm
+    // strap — which is what stopped it reading as a chest kerchief — took its
+    // STROKE at the radius floor from 1.40 px to 0.78 px, and a sub-pixel
+    // stroke is antialiased below the audit's own saturation threshold: in
+    // vista-desktop the whole collar came back as four pixels in two
+    // fragments, under the five-by-five the mechanism exists to guarantee. So
+    // the width along the band's own axis holds a floor of its own. Up close
+    // both factors are exactly 1 and the strap is a strap.
     vec3 ctr = (modelMatrix * vec4(uMinScreenCenter, 1.0)).xyz;
     float d = length(ctr - cameraPosition);
+    vec3 axis = normalize(mat3(modelMatrix) * uMinScreenAxis);
     float need = uMinScreenPx * d * uPixelAngle;
+    float needW = uMinScreenWidthPx * d * uPixelAngle;
     vec3 rad = wp.xyz - ctr;
-    float rl = length(rad);
-    if (rl > 1e-5) wp.xyz = ctr + rad * max(1.0, need / rl);
+    float along = dot(rad, axis);
+    vec3 perp = rad - axis * along;
+    float pl = length(perp);
+    if (pl > 1e-5) perp *= max(1.0, need / pl);
+    float aw = abs(along);
+    if (aw > 1e-6) along = (along / aw) * max(aw, needW);
+    wp.xyz = ctr + perp + axis * along;
     vWorldPos = wp.xyz;
   #endif
 
@@ -152,6 +171,8 @@ uniform float uShadeDrop;
 uniform float uFlatten;
 uniform float uRampLo;
 uniform float uRampHi;
+uniform float uModel;
+uniform float uSkyDrop;
 
 ${SKY_GLSL}
 
@@ -206,7 +227,7 @@ void main() {
   // chapter arrived bleached. Where a surface should read cool in shade, the
   // per-material slide toward the documented shadow-side colour is what does
   // it — deliberately, per material, and measurably.
-  float sky = 1.0 - 0.45 * clamp(-n.y, 0.0, 1.0);
+  float sky = 1.0 - uSkyDrop * clamp(-n.y, 0.0, 1.0);
   shade *= sky;
 
   // The ramp. One soft transition, and it has to REACH both ends.
@@ -265,6 +286,27 @@ void main() {
   t = mix(t, t * 0.08, occ);
 
   vec3 col = mix(shade, base, t);
+
+  // Facet modelling, on the LIT side only.
+  //
+  // The ramp is deliberately narrow — a surface is either turned toward the key
+  // light or it is not — and the consequence nobody had measured is that
+  // everything past its upper stop renders one IDENTICAL colour. Once the baked
+  // shadow stopped falsely covering the near cliff, that showed: over the near
+  // wall in the vista shot every face sits between 0.09 and 0.42 in n.sun, all
+  // past the stop, and the whole cliff came out as a single flat sheet with
+  // of them past the stop, and the whole cliff came out as a single flat sheet
+  // with 91.5% of its pixels within dE 1.8 of #E3C08C and no facet visible
+  // anywhere. That is the same airbrush the wide ramp produced, reached from
+  // the other end, and it is what left a noise texture as the wall's only
+  // variation — which is what read as an applied tiling pattern.
+  //
+  // So the lit side keeps a little Lambert in it. A surface square to the key
+  // light renders its documented hex EXACTLY; one raking across it renders a
+  // few percent under. Nothing brightens past the documented value, which is
+  // the half of that rule that has to hold.
+  float model = mix(1.0 - uModel, 1.0, smoothstep(0.0, 0.5, l));
+  col *= mix(1.0, model, t);
 
   // Contact darkening. Sky visibility, marched once at load: 1 in the open, low
   // where the ground closes in. This is what puts a dark at the feet of the
@@ -368,6 +410,14 @@ export interface RampOptions {
   ramp?: [number, number]
   /** Pull the result back toward the unlit base colour. 1 = ignores the light. */
   flatten?: number
+  /**
+   * How much value a lit face loses as it rakes away from the key light. This
+   * is what makes facets visible on the lit side of a narrow ramp; 0 is a flat
+   * sheet of the documented hex.
+   */
+  model?: number
+  /** How far an underside falls for seeing no sky. Foliage wants less. */
+  skyDrop?: number
   vertexColors?: boolean
   transparent?: boolean
   opacity?: number
@@ -380,6 +430,10 @@ export interface RampOptions {
   minScreenRadiusPx?: number
   /** Object-space center the minimum radius is measured from. */
   minScreenCenter?: [number, number, number]
+  /** Object-space axis of the band, for the separate minimum-width floor. */
+  minScreenAxis?: [number, number, number]
+  /** Half-width floor along that axis, in pixels. */
+  minScreenWidthPx?: number
   /** Height in meters below which the world gathers valley haze. */
   hazeFloor?: number
   /** How many meters the haze fades out over, above hazeFloor. */
@@ -430,10 +484,16 @@ export function makeRamp(opts: RampOptions = {}): THREE.ShaderMaterial {
       uFlatten: { value: opts.flatten ?? 0 },
       uRampLo: { value: opts.ramp?.[0] ?? -0.28 },
       uRampHi: { value: opts.ramp?.[1] ?? 0.1 },
+      uModel: { value: opts.model ?? 0 },
+      uSkyDrop: { value: opts.skyDrop ?? 0.45 },
       uMinScreenCenter: {
         value: new THREE.Vector3(...(opts.minScreenCenter ?? [0, 0, 0])),
       },
+      uMinScreenAxis: {
+        value: new THREE.Vector3(...(opts.minScreenAxis ?? [0, 1, 0])).normalize(),
+      },
       uMinScreenPx: { value: opts.minScreenRadiusPx ?? 0 },
+      uMinScreenWidthPx: { value: opts.minScreenWidthPx ?? 0.7 },
       // Replaced every frame from the live camera; this is a 55-degree vertical
       // field over a 900 px viewport, which is the desktop shot.
       uPixelAngle: { value: (2 * Math.tan((55 * Math.PI) / 180 / 2)) / 900 },

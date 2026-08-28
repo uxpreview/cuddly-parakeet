@@ -44,6 +44,12 @@ pawprints, the palette applied.
 
 **Cap: 8 iterations**, then report remaining gaps.
 
+The first loop hit its cap and failed: `docs/gate-2-verdict.md`. A second loop,
+capped at 4 because the remaining work was four localised pieces rather than an
+open-ended look hunt, closed it: `docs/gate-2b-verdict.md`. Both verdicts cite
+their renders by filename and pixel coordinate, and both sets are checked in
+under `renders/`.
+
 ## Gate 3: The two characters
 
 Movement, gait states, footprints, the dog's full node vocabulary, the camera.

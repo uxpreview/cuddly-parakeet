@@ -307,3 +307,119 @@ because a wide one on a gently curving loft is an airbrush that buries the
 facets. Characters keep a wider one, because a boy's head and a dog's barrel are
 a dozen polygons each and a closed band cuts a hard line across the curve — the
 crown becomes a hat brim and the flank becomes a saddle patch.
+
+---
+
+Gate 2b rulings, 2026-08-27. Four localised failures from `gate-2-verdict.md`,
+plus the two palette questions the verdict handed to the human. Ryan's rulings
+on the palette are recorded first, because three of the four fixes were held up
+waiting on them.
+
+## D23 — The coat and the gravel stay as documented, and so does everything else
+
+`gate-2-verdict.md` asked whether `#E5D5BC` and `#EFE3C8` should move, given
+that the honest coat-to-ground delta is 5.2% to 11.8% and the collar is what
+finds the dog at range. **Ruling (Ryan): they stay.** The intent is explicit in
+`art-direction.md` and the collar demonstrably carries him. Chapter 1's light
+and its ground value are not to be bent around the dog.
+
+The **print colour `#959780` is not a new hex and must not become one.** It is
+what you get multiplying the documented path `#EFE3C8` by the documented shadow
+`#9DA9A2` — a correct product of two documented values, which is exactly what
+D18 says a print is ("both tinted with the chapter's shadow-side value", and
+they multiply). It is recorded here rather than added to `palette.ts`, because
+adding it would make the palette look one entry larger than the document
+actually authorises.
+
+The other six derived hexes — town roof, deadwood, scrub, the two river depths,
+town stone and the sea — **stay in `palette.ts` unchanged for now**, pending an
+`art-direction.md` addition proposed separately for Ryan to approve. Nothing in
+this repo may edit that document ahead of that approval.
+
+## D24 — A face's base COLOUR is flat too, and that is what the floor was missing
+
+D22 made mottle, sun occlusion and sky visibility per-face and the canyon walls
+came right, but the canyon floor did not, and nobody had asked why. The answer
+was that D22 never covered the fourth channel. `MeshBuilder.quad` deliberately
+painted a quad's four corners `[kA, kA, kB, kB]` — the two rungs' materials,
+gradated across the face — reasoning that a hard material edge "paints a stripe
+down the canyon". So any quad spanning a material change carried a gradient
+across itself, and floor rungs sit close enough together that they are never
+subdivided, so nearly every floor face was such a quad.
+
+Measured: `prints-desktop.png` at y=600 ran 880 px of floor whose luminance
+walked 224 to 193 to 230 with no break anywhere in it, and each face under the
+near half of that row held limestone at one corner and path at the others.
+
+**Ruling:** one material per face, chosen at the face's own midpoint. The stripe
+the old comment feared is real and is answered by moving the DECISION rather
+than by smearing the colour: the midpoint is offset by a smooth 3-D noise about
+seven metres long, so the boundary swings between one rung and the next in long
+stretches and the two materials interlock. The noise has to be long. At a
+wavelength near the face size, an unsubdivided quad — whose midpoint is exactly
+0.5 — turns the choice into a coin flip per face, and pale gravel against warm
+limestone is thirty levels and a hue apart: the floor came out a chessboard.
+
+## D25 — A cast-shadow ray starts clear of the surface it starts on
+
+The wall mottle was not the wall's problem. The baked sun march began at the
+surface point, and a 2 m heightfield cell containing a near-vertical cliff is as
+tall as the rim — so every wall face reported itself as blocking itself.
+Measured over the near wall in `vista`: 95.5% of faces turned toward the sun by
+the ramp's own test, not one on its shade side, mean baked occlusion 0.87. That
+is what put the documented shadow hex on 77-82% of a sunlit wall, and because
+the outcome hinged on which side of a cell boundary a centroid happened to fall,
+it is also what made the wall a chessboard rather than a shadow.
+
+**Ruling:** the march starts pushed out along the horizontal part of the face's
+own normal, by a full cell on a vertical face and by nothing at all on level
+ground — so the canyon floor's shadows, which are cast by the walls and terraces
+around it, are untouched. Mean occlusion over the same wall afterwards: 0.007.
+Limestone family share on the near wall: `hero` 7.6% to 98.5%, `vista` 23.0% to
+91.5%.
+
+## D26 — The lit side keeps a little Lambert in it
+
+Removing the false shadow exposed what it had been hiding. D16's ramp is
+deliberately narrow — a surface is either turned toward the key light or it is
+not — and the consequence is that everything past its upper stop renders one
+IDENTICAL colour. Every face of the near wall sits between 0.09 and 0.42 in
+n·sun, all of them past the stop, so the cliff came out as a single flat sheet
+with 91.5% of its pixels within dE 1.8 of `#E3C08C` and no facet visible
+anywhere. That is the same airbrush a wide ramp produces, arrived at from the
+other end.
+
+**Ruling:** a lit face loses a little value as it rakes away from the key light.
+A surface square to the sun still renders its documented hex exactly — the half
+of D16's rule that has to hold is that nothing brightens past the documented
+value — and one raking across it renders a few percent under. The mottle drops
+correspondingly, because a wall's form should come from its geometry and not
+from a noise texture painted over it.
+
+That noise was also not noise. Both octaves were a one-dimensional `vnoise` of a
+linear combination of x, y and z, which is constant on every plane
+perpendicular to its direction: a plane wave. Two of them crossing is a lattice
+of parallelograms, and that lattice is what tripped the failure list's "visible
+image textures". Replaced with real 3-D value noise, plus a height-keyed bedding
+term on stone so a wall's variation reads as strata.
+
+## D27 — The dog is judged in a neutral pose, on a turntable
+
+The previous pass shipped an animal that read as a cat and the failure survived
+eight iterations, because the only frame it was ever judged in was the gameplay
+camera that happened to contain him: from behind and above, at 34 by 24 px, with
+his head yawed 117 degrees over the collar. Silhouette is a Gate 2 item, so it
+gets its own instrument. `tools/dev/dogturn.mjs` renders him at six angles
+including two near-orthographic elevations, and `?dogPose=neutral` stands him
+square with his head forward so the neck, the collar and the topline are all
+visible at once. This is a dev affordance, not a shipped pose.
+
+Two bugs surfaced the moment he could be seen. The limb chain tracked its own
+joint positions with `+sin` where three's `rotateX` gives `-sin`, so every lower
+leg was attached about six centimetres off in Z. And the neck was tilted
+BACKWARD while the head was placed forward of it — the rising-part and
+hanging-part rotations need opposite signs — so the neck rendered as a flat slab
+lying across the chest with the skull perched on top of it rather than on the
+end of it. The dog is also stood on the ground from his own bounding box now,
+rather than from joint heights hand-tuned to a pose, after five centimetres of
+daylight under him in the judged set.

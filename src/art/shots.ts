@@ -53,7 +53,13 @@ export const RIM_STAGE = { boy: 319, dog: 330, trailFrom: 306 }
 export const FORD_STAGE = { boy: 97, dog: 106, trailFrom: 88 }
 
 type Ground = (x: number, z: number, fromY: number) => { y: number } | null
-/** 0 = in full sun, 1 = fully inside a terrain shadow. */
+/**
+ * How lit a place is to stand, 0 = perfect. Sun occlusion plus the ground's
+ * own sky visibility: `hero` staged the boy on ground at 99% of the frame's
+ * lit-floor value and the dog, in the frame named for him, at 91%, and both
+ * were in full sun. The difference was contact darkening — the dog was closer
+ * in under the wall — so a search that only asks about the sun cannot see it.
+ */
 type SunOcc = (x: number, y: number, z: number) => number
 
 function sampleAt(art: ArtTerrain, i: number) {
@@ -94,10 +100,15 @@ function stageInLight(
   sun: SunOcc | undefined,
   eyeHeight: number,
   span: number,
+  sky?: SunOcc,
 ): { at: THREE.Vector3; i: number; lat: number } {
   const at = offset(art, i, lat, ground)
   if (!sun) return { at, i, lat }
-  let best = { at, i, lat, occ: sun(at.x, at.y + eyeHeight, at.z) }
+  // Contact darkening reaches its floor at 0.34 of sky view and stops mattering
+  // above it, so that is where the penalty is measured from.
+  const cost = (x: number, y: number, z: number) =>
+    sun(x, y + eyeHeight, z) + (sky ? Math.max(0, 0.34 - sky(x, y + 0.25, z)) * 1.6 : 0)
+  let best = { at, i, lat, occ: cost(at.x, at.y, at.z) }
   if (best.occ <= 0.01) return best
 
   // Nearest first, so the actor moves as little as the light allows.
@@ -113,7 +124,7 @@ function stageInLight(
       // shot the camera was composed for. He walks a route on the floor; the
       // only staging freedom here is along it.
       if (Math.abs(p.y - at.y) > 1.2) continue
-      const occ = sun(p.x, p.y + eyeHeight, p.z)
+      const occ = cost(p.x, p.y, p.z)
       if (occ < best.occ) best = { at: p, i: ii, lat: ll, occ }
       // Only FULL sun ends the search. Stopping at the penumbra is what left the
       // dog a third occluded in every canyon shot: a third occluded still costs
@@ -137,14 +148,15 @@ export function buildStage(
    * own and the actors have to stay inside its frame.
    */
   span = 34,
+  sky?: SunOcc,
 ): Stage {
   const { boy: bi0, dog: di0, trailFrom } = samples
   const boyLat0 = -0.55
   const dogLat0 = 0.85
 
   // The dog first: he is the subject, so he gets the pick of the light.
-  const dogSpot = stageInLight(art, di0, dogLat0, ground, sun, 0.4, span)
-  const boySpot = stageInLight(art, bi0, boyLat0, ground, sun, 0.9, span)
+  const dogSpot = stageInLight(art, di0, dogLat0, ground, sun, 0.4, span, sky)
+  const boySpot = stageInLight(art, bi0, boyLat0, ground, sun, 0.9, span, sky)
   const di = dogSpot.i
   const bi = boySpot.i
   const boyLat = boySpot.lat
@@ -193,8 +205,19 @@ export function buildStage(
     }
     if (i <= bi && sinceBoy >= 0.46) {
       sinceBoy = 0
-      const px = p.x + Math.sin(h) * 0.09 * (side > 0 ? 1 : -1)
-      const pz = p.z - Math.cos(h) * 0.09 * (side > 0 ? 1 : -1)
+      // The boy walks BESIDE the dog's line, not down the middle of it.
+      //
+      // Both trails were being stamped on the same interpolated centreline with
+      // lateral offsets of 0.10 and 0.09 m, so wherever the two stride counters
+      // came due within a few centimetres of each other a pawprint and a
+      // bootprint landed one centimetre apart. That is the doubled decal in
+      // `dog-read-desktop.png`: two overlapping stamps about 15 px apart with a
+      // bright gap between them, which read as a printing error and as a bar
+      // across the centre pad. It is also untrue — nobody walks in their dog's
+      // tracks.
+      const lateral = -0.32 + 0.07 * (side > 0 ? 1 : -1)
+      const px = p.x + Math.sin(h) * lateral
+      const pz = p.z - Math.cos(h) * lateral
       boyPrints.push({
         at: [px, p.y + 0.01, pz],
         heading,

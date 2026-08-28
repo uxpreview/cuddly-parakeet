@@ -288,7 +288,12 @@ export function makePrintTrail(
     uniforms: {
       uMap: { value: kind === 'dog' ? dogPrintTexture() : boyPrintTexture() },
       uColor: { value: srgbTint(CH1.limestoneShadow.hex) },
-      uStrength: { value: kind === 'dog' ? 0.72 : 0.44 },
+      // Eased back from 0.72/0.44. The trail measured 30.4% contrast against
+      // the gravel at the near end, which overshot: it went from invisible
+      // straight past readable to conspicuous, and a prop that draws the eye in
+      // a frame whose whole job is to send the eye to the collar is competing
+      // with the one thing that must never be competed with.
+      uStrength: { value: kind === 'dog' ? 0.55 : 0.33 },
       uTexSize: { value: 128 },
       uMinBoost: { value: kind === 'dog' ? 0.42 : 0.3 },
     },

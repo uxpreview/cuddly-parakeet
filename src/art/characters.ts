@@ -41,17 +41,25 @@ export const BOY_WALK: BoyPose = {
 }
 
 export interface DogPose {
+  /** Positive swings the limb FORWARD, toward +Z. */
   legFL: number
   legFR: number
   legBL: number
   legBR: number
-  /** Head yaw/pitch. A look-back is a big yaw with the body barely turned. */
+  /**
+   * The look-back is shared between the neck and the head.
+   *
+   * It was all head before, and a head yawed 117 degrees on a neck that still
+   * pointed down the canyon put the muzzle out sideways from the skull like a
+   * spur — the single worst-looking thing in the render set. An animal turning
+   * to look behind it bends its NECK first; the head only finishes the turn.
+   */
+  neckY: number
   headY: number
   headP: number
   /** Tail lift and sweep. */
   tailUp: number
   tailY: number
-  bodyY: number
 }
 
 /** The look-back: he has stopped, and he is checking that the boy is following. */
@@ -60,11 +68,41 @@ export const DOG_LOOK_BACK: DogPose = {
   legFR: -0.06,
   legBL: -0.04,
   legBR: 0.08,
-  headY: 2.05,
-  headP: -0.06,
-  tailUp: 0.95,
-  tailY: 0.28,
-  bodyY: 0.16,
+  // 63 degrees, shared between neck and head.
+  //
+  // At 103 the muzzle swung clear across the barrel and eclipsed the collar: a
+  // look-back has to read as a glance over the shoulder, not as a head screwed
+  // on backwards. At 77 it eclipsed nothing but pointed the snout straight at
+  // the `dog-read` camera, which sits where the boy's eyes are — so in the one
+  // frame named for reading him the muzzle was fully foreshortened and the nose
+  // sat outside the far eye. Re-aiming the camera to fix that cost the shot its
+  // composition: the boy left the picture and the trail slid to the frame edge.
+  // Turning his head a little less is the cheaper answer, and a glance is what
+  // a look-back is anyway.
+  neckY: 0.42,
+  headY: 0.68,
+  headP: 0.1,
+  // Carried at the croup, a hand above the topline. Higher than this and the
+  // curve starts to hook over his back, which is a cat.
+  tailUp: 0.85,
+  tailY: 0.2,
+}
+
+/**
+ * Standing square, head forward. Not a staged beat — this is the pose the model
+ * is JUDGED in, because a look-back hides the neck, the collar and most of the
+ * silhouette behind a head turned a hundred degrees.
+ */
+export const DOG_NEUTRAL: DogPose = {
+  legFL: 0.06,
+  legFR: -0.04,
+  legBL: -0.03,
+  legBR: 0.05,
+  neckY: 0,
+  headY: 0,
+  headP: 0.05,
+  tailUp: 0.8,
+  tailY: 0.06,
 }
 
 // --- primitives -----------------------------------------------------------
@@ -162,10 +200,17 @@ export function buildBoy(pose: BoyPose = BOY_WALK, occlusion = 0): THREE.Group {
   // touch — a boy looking down the canyon for his dog.
   const headGroup: THREE.BufferGeometry[] = []
   headGroup.push(paint(sphere(0.185, 11, 8), skin, S))
-  // hair as a cap sitting on the skull, cut off above the eyes
-  const hair = sphere(0.194, 11, 6)
-  hair.scale(1, 0.86, 1)
-  headGroup.push(paint(place(hair, [0, 0.03, -0.012]), BOY.hair.hex, S))
+  // Hair as a true spherical CAP, at a uniform radius larger than the skull's.
+  //
+  // It used to be a whole sphere squashed to 0.86 in Y, which is smaller than
+  // the skull over most of the front of the head — so the skin punched through
+  // it along the brow, as two bare bands across the forehead at roughly
+  // (72,87)-(105,93) in `dog-read-desktop.png`, sampling #CE9F76. A cap of
+  // constant radius cannot intersect a smaller concentric sphere at all; the
+  // hairline is where the cap ENDS, and it is tipped back so it sits lower at
+  // the nape than at the brow.
+  const hair = new THREE.SphereGeometry(0.197, 12, 8, 0, Math.PI * 2, 0, 1.28)
+  headGroup.push(paint(place(hair, [0, 0.004, -0.004], [0.34, 0, 0]), BOY.hair.hex, S))
   for (const side of [1, -1]) {
     const e = sphere(0.042, 6, 4)
     e.scale(0.5, 1, 0.9)
@@ -202,6 +247,44 @@ export function buildBoy(pose: BoyPose = BOY_WALK, occlusion = 0): THREE.Group {
 // ~0.5 m at the shoulder. Compact, pointed ears, a tail with real language.
 // Coat #E5D5BC with white points, so he reads against every palette; the
 // collar is #D0342C and is the only red anything in this game.
+//
+// He read as a CAT through iteration 7, and that is the most expensive possible
+// place for this game to fail its own silhouette test. The diagnosis, and what
+// each half of it is answered with here:
+//
+//   arched back, dipping at the loin        -> a LEVEL topline; the tuck is on
+//                                              the belly line only
+//   no chest, no shoulder, no haunch        -> a forechest prow ahead of the
+//                                              forelegs, scapula masses at the
+//                                              withers, thigh masses at the hip
+//   four spindly posts of one diameter      -> three tapering segments a leg,
+//                                              with a real elbow in front and a
+//                                              real hock behind
+//   thin high-set tail with an S in it      -> base at the croup, half again as
+//                                              thick, one gentle arc
+//   tall ears set high and wide             -> lower, closer, and smaller
+//                                              against a larger skull
+//   a white spike for a muzzle              -> a blunt COAT-coloured muzzle,
+//                                              with the white moved to the jaw,
+//                                              the blaze, the chest and the feet
+//
+// Proportions are held to real ones: brisket at elbow height, hock behind the
+// hip, muzzle about half the skull's length. Flat shading exposes bad forms, so
+// the forms are where the work goes.
+
+/**
+ * Swing a HANGING part (built along -Y) forward by `ang`. rotateX(-ang) sends
+ * -Y toward +Z, which is forward.
+ */
+const swingX = (g: THREE.BufferGeometry, ang: number) => place(g, [0, 0, 0], [-ang, 0, 0])
+
+/**
+ * Tilt a RISING part (built along +Y) forward by `ang`. The opposite sign, and
+ * getting it wrong is not subtle: the neck leaned backward while the head was
+ * placed forward of it, so the neck rendered as a flat slab lying across the
+ * chest with the skull perched on top of it rather than on the end of it.
+ */
+const tiltX = (g: THREE.BufferGeometry, ang: number) => place(g, [0, 0, 0], [ang, 0, 0])
 
 export function buildDog(pose: DogPose = DOG_LOOK_BACK, occlusion = 0): THREE.Group {
   const parts: THREE.BufferGeometry[] = []
@@ -209,23 +292,23 @@ export function buildDog(pose: DogPose = DOG_LOOK_BACK, occlusion = 0): THREE.Gr
   const pts = DOG.points.hex
   const S = SHADOW_MIX.character
 
-  // The body is ONE lofted barrel and it is NOT symmetric. A fore-aft
-  // symmetrical pill with four identical posts under it reads as a goat from
-  // every angle, which is what the first three passes of this dog did. The
-  // topline here rises to a deep chest at the shoulder, dips at the loin and
-  // rises again over the haunch, and the belly tucks up behind the ribs.
+  // The barrel. One loft, and it is NOT symmetric fore and aft: the topline is
+  // LEVEL from the withers to the croup, the deepest section is the heart girth
+  // just behind the shoulder, and the belly tucks up under the loin. An arched
+  // topline over a tucked belly is a cat's roach back, and it was the loudest
+  // single thing saying "cat" in the previous model.
+  const RINGS: [number, number, number, number][] = [
+    // z, half-width, half-height, centre height  (topline = centre + half-height)
+    [0.155, 0.1, 0.104, 0.394], // front of the ribcage, behind the shoulder
+    [0.1, 0.134, 0.134, 0.372], // heart girth: deepest and widest
+    [0.03, 0.136, 0.13, 0.376],
+    [-0.045, 0.116, 0.108, 0.398], // loin, tucked
+    [-0.108, 0.13, 0.118, 0.39], // haunch
+    [-0.168, 0.096, 0.088, 0.404], // croup
+  ]
   {
-    const rings: [number, number, number, number][] = [
-      // z, half-width, half-height, centre height
-      [0.235, 0.062, 0.07, 0.4],
-      [0.175, 0.105, 0.118, 0.395], // shoulder / deep chest
-      [0.09, 0.112, 0.125, 0.39],
-      [-0.01, 0.096, 0.099, 0.395], // loin, tucked
-      [-0.105, 0.104, 0.109, 0.4], // haunch
-      [-0.195, 0.076, 0.078, 0.4],
-    ]
     const N = 8
-    const ringPts = rings.map(([z, hw, hh, cy]) => {
+    const ringPts = RINGS.map(([z, hw, hh, cy]) => {
       const out: THREE.Vector3[] = []
       for (let i = 0; i < N; i++) {
         const a = (i / N) * Math.PI * 2
@@ -243,8 +326,8 @@ export function buildDog(pose: DogPose = DOG_LOOK_BACK, occlusion = 0): THREE.Gr
         faces.push([ringPts[r][i], ringPts[r + 1][j], ringPts[r][j]])
       }
     }
-    const front = new THREE.Vector3(0, rings[0][3], rings[0][0] + 0.05)
-    const back = new THREE.Vector3(0, rings[rings.length - 1][3], rings[rings.length - 1][0] - 0.05)
+    const front = new THREE.Vector3(0, RINGS[0][3] - 0.012, RINGS[0][0] + 0.042)
+    const back = new THREE.Vector3(0, RINGS[RINGS.length - 1][3], RINGS[RINGS.length - 1][0] - 0.036)
     for (let i = 0; i < N; i++) {
       const j = (i + 1) % N
       faces.push([front, ringPts[0][j], ringPts[0][i]])
@@ -257,92 +340,175 @@ export function buildDog(pose: DogPose = DOG_LOOK_BACK, occlusion = 0): THREE.Gr
     parts.push(paint(g, coat, S))
   }
 
-  // Legs, each with ONE bend: elbow forward on the front pair, hock backward on
-  // the rear. Four straight jointless posts is the other half of the goat.
-  const buildLeg = (
+  // The forechest. A dog seen from in front is a chest with a head over it; the
+  // previous model went straight from the neck to the belly and had no front at
+  // all. This is also where one of the white points goes, which is why the two
+  // decisions are made in the same place: the chest patch is the largest bright
+  // mark on him and it faces the boy for the whole chapter.
+  {
+    const brisket = sphere(0.066, 9, 6)
+    brisket.scale(0.92, 1.06, 0.9)
+    parts.push(paint(place(brisket, [0, 0.336, 0.17]), pts, S))
+  }
+  // Scapulae at the withers and thigh masses over the hip. Both are inside the
+  // barrel's silhouette from the side and break it from every other angle,
+  // which is exactly what a shoulder and a haunch do.
+  for (const side of [1, -1]) {
+    const blade = sphere(0.07, 8, 6)
+    blade.scale(0.58, 0.94, 1.2)
+    parts.push(paint(place(blade, [0.086 * side, 0.424, 0.096]), coat, S))
+    const thigh = sphere(0.09, 9, 6)
+    thigh.scale(0.66, 1.04, 0.98)
+    parts.push(paint(place(thigh, [0.088 * side, 0.382, -0.12]), coat, S))
+  }
+
+  /**
+   * A leg as a CHAIN. Each segment is a capsule with its own radius, swung by
+   * its own angle relative to the one above it, and the radius step at a joint
+   * is what makes the joint visible under flat shading. Four posts of one
+   * diameter with no bend is a table, and that is what the previous legs were.
+   */
+  const limb = (
     x: number,
+    y: number,
     z: number,
+    segs: [len: number, r: number, dAng: number][],
     swing: number,
-    front: boolean,
   ) => {
-    // Short and thick, and starting well inside the barrel. A leg that begins
-    // at the belly line leaves a visible gap under the body and the animal
-    // comes apart; a long thin one turns him into a goat.
-    const hipY = front ? 0.375 : 0.38
-    const upperLen = front ? 0.115 : 0.13
-    const lowerLen = front ? 0.1 : 0.105
-    const bend = front ? -0.3 : 0.38
-    const upper = capsule(front ? 0.056 : 0.054, upperLen - 0.02, 3, 7)
-    place(upper, [0, -upperLen / 2, 0])
-    place(upper, [0, 0, 0], [swing, 0, 0])
-    place(upper, [x, hipY, z])
-    parts.push(paint(upper, coat, S))
-
-    const kneeY = hipY - Math.cos(swing) * upperLen
-    const kneeZ = z + Math.sin(swing) * upperLen
-    const lower = capsule(0.032, lowerLen - 0.02, 3, 6)
-    place(lower, [0, -lowerLen / 2, 0])
-    place(lower, [0, 0, 0], [swing + bend, 0, 0])
-    place(lower, [x, kneeY, kneeZ])
-    parts.push(paint(lower, coat, S))
-
-    // The sock overlaps the lower leg rather than sitting under it: as a
-    // separate lump it floated free of the leg by a visible gap.
-    const footY = kneeY - Math.cos(swing + bend) * lowerLen
-    const footZ = kneeZ + Math.sin(swing + bend) * lowerLen
-    const sock = capsule(0.036, 0.055, 3, 7)
-    place(sock, [0, -0.028, 0])
-    place(sock, [0, 0, 0], [swing + bend, 0, 0])
-    place(sock, [x, footY + 0.05, footZ - 0.012])
+    let py = y
+    let pz = z
+    let a = swing
+    for (const [len, r, dAng] of segs) {
+      a += dAng
+      const seg = capsule(r, Math.max(0.012, len - r * 1.1), 3, 7)
+      place(seg, [0, -len / 2, 0])
+      swingX(seg, a)
+      place(seg, [x, py, pz])
+      parts.push(paint(seg, coat, S))
+      py -= Math.cos(a) * len
+      pz += Math.sin(a) * len
+    }
+    // Paw and sock. White, and shaped: a rounded wedge longer than it is wide,
+    // so from the gameplay camera — which looks down at him — a foot is a foot
+    // and not a bead on the end of a stick.
+    const paw = capsule(0.043, 0.052, 3, 8)
+    paw.rotateX(Math.PI / 2)
+    paw.scale(0.9, 0.78, 1.0)
+    swingX(paw, a * 0.25)
+    place(paw, [x, py + 0.03, pz + 0.014])
+    parts.push(paint(paw, pts, S))
+    const sock = capsule(0.041, 0.045, 3, 7)
+    place(sock, [0, -0.024, 0])
+    swingX(sock, a)
+    place(sock, [x, py + 0.062, pz])
     parts.push(paint(sock, pts, S))
   }
-  buildLeg(0.078, 0.145, pose.legFL, true)
-  buildLeg(-0.078, 0.145, pose.legFR, true)
-  buildLeg(0.08, -0.15, pose.legBL, false)
-  buildLeg(-0.08, -0.15, pose.legBR, false)
 
-  // White points, sized to do their job. art-direction.md puts the coat at
-  // #E5D5BC and the canyon gravel at #EFE3C8 — four value points apart, near
-  // identical hue — so the coat alone cannot separate him from the ground he
-  // trots over. The white points are the value break that does.
-  const blaze = sphere(0.06, 8, 6)
-  blaze.scale(0.82, 1.4, 0.72)
-  parts.push(paint(place(blaze, [0, 0.385, 0.23]), pts, S))
-
-  // A SHORT, THICK neck that carries the skull at the shoulder line, not above
-  // it. A long rising strut is what turned this dog into a llama.
-  const NECK_Y = 0.455
-  const NECK_Z = 0.225
-  {
-    const neck = capsule(0.068, 0.055, 3, 8)
-    place(neck, [0, 0, 0], [0.78, 0, 0])
-    place(neck, [0, NECK_Y, NECK_Z])
-    parts.push(paint(neck, coat, S))
-    const throat = sphere(0.04, 7, 5)
-    throat.scale(0.85, 1.0, 0.85)
-    parts.push(paint(place(throat, [0, NECK_Y - 0.03, NECK_Z + 0.05]), pts, S))
+  // Front: humerus back, forearm straight down under the shoulder, short
+  // pastern. The elbow lands at the brisket line, which is where a dog's is.
+  for (const [side, sw] of [
+    [1, pose.legFL],
+    [-1, pose.legFR],
+  ] as const) {
+    limb(
+      0.093 * side,
+      0.372,
+      0.112,
+      [
+        [0.115, 0.062, -0.46],
+        [0.185, 0.053, 0.44],
+        [0.045, 0.047, 0.14],
+      ],
+      sw,
+    )
+  }
+  // Rear: femur forward, gaskin back, metatarsus down. The angle between the
+  // second and third segments IS the hock, and it is the joint that separates a
+  // dog's back leg from a cat's at a glance.
+  for (const [side, sw] of [
+    [1, pose.legBL],
+    [-1, pose.legBR],
+  ] as const) {
+    limb(
+      0.089 * side,
+      0.392,
+      -0.124,
+      [
+        [0.13, 0.078, 0.55],
+        [0.135, 0.057, -1.15],
+        [0.13, 0.044, 0.68],
+      ],
+      sw,
+    )
   }
 
-  // The head. A dog in profile is roughly half muzzle: erasing the snout to
-  // "shorten" it left a ball on a stick, which is a goat's head.
-  const headParts: THREE.BufferGeometry[] = []
-  const skull = sphere(0.076, 9, 7)
-  skull.scale(1, 0.95, 1.0)
-  headParts.push(paint(place(skull, [0, 0, 0]), coat, S))
-  // a proper tapering muzzle, as long as the skull is deep
+  // --- neck and head, as one turning unit ----------------------------------
+  // Built in a local frame at the base of the neck and yawed as a whole by
+  // `neckY`, with the head taking `headY` on top of that. See DogPose.
+  const neckHead: THREE.BufferGeometry[] = []
+  const NECK_LEN = 0.19
+  const NECK_TILT = 0.56 // radians from vertical, leaning forward
+  const HEAD_AT: [number, number, number] = [
+    0,
+    Math.cos(NECK_TILT) * NECK_LEN + 0.038,
+    Math.sin(NECK_TILT) * NECK_LEN + 0.04,
+  ]
   {
+    // A thick tapered neck that is wider where it meets the shoulder than where
+    // it meets the skull. A parallel-sided strut is a llama's.
+    const neck = new THREE.CylinderGeometry(0.062, 0.098, NECK_LEN, 9, 1)
+    tiltX(neck, NECK_TILT)
+    place(neck, [0, Math.cos(NECK_TILT) * NECK_LEN * 0.5, Math.sin(NECK_TILT) * NECK_LEN * 0.5])
+    neckHead.push(paint(neck, coat, S))
+    // the white of the chest carries up the throat
+    const throat = sphere(0.045, 7, 5)
+    throat.scale(0.78, 1.1, 0.72)
+    neckHead.push(paint(place(throat, [0, 0.042, 0.064]), pts, S))
+  }
+
+  const headParts: THREE.BufferGeometry[] = []
+  const skull = sphere(0.094, 9, 7)
+  skull.scale(0.97, 0.93, 1.08)
+  headParts.push(paint(skull, coat, S))
+  // Cheeks, filling the corner between skull and muzzle. Without them there is
+  // a visible waist there and the muzzle reads as stuck on.
+  for (const side of [1, -1]) {
+    const cheek = sphere(0.053, 7, 5)
+    cheek.scale(0.82, 0.88, 0.9)
+    headParts.push(paint(place(cheek, [0.055 * side, -0.024, 0.044]), coat, S))
+  }
+  // The muzzle. BLUNT, and the same colour as the skull.
+  //
+  // It was white and it was a spike — 0.152 long off a skull of radius 0.076 —
+  // and under the look-back yaw it projected sideways out of the head carrying
+  // the nose with it, so it read as a second object rather than as a snout.
+  // Painting it in the coat welds it to the skull; the white moves to the jaw
+  // and the blaze, where a dog's white actually is.
+  //
+  // NO WHITE ON THE FACE AT ALL. Splitting the loft along its own waist and
+  // painting the lower half in the points value was better than the capsule it
+  // replaced, but at reading distance it still resolved as a pale lens with a
+  // point at each end sitting where the mouth belongs — 21x8 px in
+  // dog-read-desktop, 44x17 in the portrait — and it read as a tusk. The coat
+  // carries the whole head; the white points live on the chest, the throat, the
+  // feet and the tail tip, which is where a dog's white actually is.
+  {
+    // A STOP. The muzzle's first ring is set well inside the skull's outline
+    // and its own taper is gentle, so the profile BREAKS at the brow instead of
+    // running crown to chin as one convex curve — which is what "there is no
+    // muzzle" meant in the last verdict even though the geometry was there.
     const rings: [number, number, number][] = [
-      [0.02, 0.05, 0.045],
-      [0.06, 0.043, 0.038],
-      [0.105, 0.034, 0.03],
-      [0.14, 0.03, 0.026],
+      [0.03, 0.062, 0.056],
+      [0.092, 0.058, 0.05],
+      [0.152, 0.05, 0.042],
     ]
-    const N = 6
+    const AXIS_Y = -0.036
+    const N = 8
     const rp = rings.map(([z, hw, hh]) => {
       const o: THREE.Vector3[] = []
       for (let i = 0; i < N; i++) {
         const a = (i / N) * Math.PI * 2
-        o.push(new THREE.Vector3(Math.cos(a) * hw, -0.022 + Math.sin(a) * hh, z))
+        o.push(new THREE.Vector3(Math.cos(a) * hw, AXIS_Y + Math.sin(a) * hh, z))
       }
       return o
     })
@@ -354,63 +520,99 @@ export function buildDog(pose: DogPose = DOG_LOOK_BACK, occlusion = 0): THREE.Gr
         faces.push([rp[r][i], rp[r + 1][j], rp[r][j]])
       }
     }
-    const tip = new THREE.Vector3(0, -0.022, 0.152)
-    for (let i = 0; i < N; i++) faces.push([tip, rp[rp.length - 1][i], rp[rp.length - 1][(i + 1) % N]])
+    const tip = new THREE.Vector3(0, AXIS_Y - 0.006, 0.196)
+    for (let i = 0; i < N; i++)
+      faces.push([tip, rp[rp.length - 1][i], rp[rp.length - 1][(i + 1) % N]])
+    // close the base, so the stop is a hard edge rather than an open tube
+    const base = new THREE.Vector3(0, AXIS_Y, 0.03)
+    for (let i = 0; i < N; i++) faces.push([base, rp[0][(i + 1) % N], rp[0][i]])
     const pos: number[] = []
     for (const f of faces) for (const v of f) pos.push(v.x, v.y, v.z)
     const g = new THREE.BufferGeometry()
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
-    headParts.push(paint(g, pts, S))
+    headParts.push(paint(g, coat, S))
   }
-  headParts.push(paint(place(sphere(0.017, 6, 5), [0, -0.018, 0.148]), DOG.nose.hex, 0.2))
-  // Ears: BROAD, low on the skull, swept back against it. Narrow upright
-  // triangles splayed off the crown are horns.
-  // Ears UP and pointed, raked back only a little. Raked hard they hang off the
-  // skull as floppy downward tabs, which is a goat, and art-direction.md is
-  // explicit that this dog has pointed ears.
+  headParts.push(paint(place(sphere(0.016, 6, 5), [0, -0.05, 0.19]), DOG.nose.hex, 0.2))
+  // Ears: pointed, per art-direction.md, but SMALL, low and close together. The
+  // previous pair stood 0.085 tall off a 0.076 skull, splayed wide off the
+  // crown — that is a cat's ear set, and on a pale wedge head it was most of
+  // why he read as one.
   for (const side of [1, -1]) {
-    const ear = cone(0.044, 0.085, 4)
-    ear.scale(1, 1, 0.5)
-    place(ear, [0, 0.04, 0])
-    place(ear, [0, 0, 0], [-0.26, side * 0.3, side * 0.34])
-    place(ear, [0.05 * side, 0.055, -0.018])
+    // Big, thick, and rooted on the SIDE of the skull.
+    //
+    // The pair before this stood 15 px above the crown on a 136 px head — 11%
+    // of head height — as flat blades meeting in a V on top of the skull, which
+    // is a cockerel's comb, not a dog's ears. A pointed ear is a third to a
+    // half of the head's height, it has a section, and it hangs off the temple.
+    const ear = cone(0.05, 0.108, 4)
+    ear.scale(1, 1, 0.72)
+    place(ear, [0, 0.05, 0])
+    place(ear, [0, 0, 0], [-0.1, side * 0.24, side * 0.2])
+    // Set INTO the skull rather than onto it. Sitting proud, the base's outer
+    // corners cleared the skull's own outline and put two flanges on the
+    // silhouette — 10x7 and 8x19 px in dog-read-desktop — so the head had four
+    // points instead of two.
+    place(ear, [0.055 * side, 0.03, 0.002])
     headParts.push(paint(ear, coat, S))
   }
+  {
+    const brow = sphere(0.062, 7, 5)
+    brow.scale(1.32, 0.44, 0.78)
+    headParts.push(paint(place(brow, [0, 0.042, 0.048]), coat, S))
+  }
   for (const side of [1, -1]) {
-    const eye = sphere(0.014, 6, 5)
+    const eye = sphere(0.019, 6, 5)
     eye.scale(1, 1.05, 0.7)
-    headParts.push(paint(place(eye, [0.04 * side, 0.014, 0.055]), DOG.eyes.hex, 0.15))
+    headParts.push(paint(place(eye, [0.052 * side, 0.002, 0.072]), DOG.eyes.hex, 0.15))
   }
   const head = mergePainted(headParts)
   place(head, [0, 0, 0], [pose.headP, pose.headY, 0])
-  place(head, [0, NECK_Y + 0.075, NECK_Z + 0.055])
-  parts.push(head)
+  place(head, HEAD_AT)
+  neckHead.push(head)
 
-  // Tail: a curved taper with real weight. Tail language is half of what this
-  // character says, so the form has to be able to carry a curve.
+  const NECK_BASE: [number, number, number] = [0, 0.412, 0.132]
+  const neckGeom = mergePainted(neckHead)
+  place(neckGeom, [0, 0, 0], [0, pose.neckY, 0])
+  place(neckGeom, NECK_BASE)
+  parts.push(neckGeom)
+
+  // Tail: based at the CROUP and half again as thick as it was, curving once.
+  // The old one started at mid-body height with an S in it and tapered to a
+  // whip — a cat's tail, drawn on the wrong part of the animal.
   {
-    const segs = 5
+    const segs = 3
     let px = 0
-    let py = 0.4
-    let pz = -0.215
+    let py = 0.428
+    let pz = -0.196
     let ang = pose.tailUp
     for (let i = 0; i < segs; i++) {
       const t = i / segs
-      const r = 0.04 * (1 - t * 0.42)
-      const len = 0.055
-      const seg = capsule(r, len * 0.7, 2, 6)
+      const r = 0.048 * (1 - t * 0.3)
+      const len = 0.06
+      const seg = capsule(r, len * 0.75, 2, 6)
       place(seg, [0, len / 2, 0])
       place(seg, [0, 0, 0], [-(Math.PI / 2 - ang), pose.tailY * (0.4 + t), 0])
       place(seg, [px, py, pz])
-      parts.push(paint(seg, i >= segs - 2 ? pts : coat, S))
+      parts.push(paint(seg, i >= segs - 1 ? pts : coat, S))
       px += Math.sin(pose.tailY * (0.4 + t)) * len * 0.3
       py += Math.sin(ang) * len
       pz -= Math.cos(ang) * len
+      // one gentle arc, not an S: the angle only ever falls
       ang -= 0.16
     }
   }
 
   const geom = mergePainted(parts)
+
+  // Stand him on the ground. The model is authored around the barrel, so where
+  // the feet end up is whatever the leg chain and the pose add up to — and in
+  // the judged set that was five centimetres of daylight under him with his own
+  // contact shadow printed on the sand below. Measured once, here, rather than
+  // hand-tuned into the joint heights every time a leg angle changes.
+  geom.computeBoundingBox()
+  const drop = geom.boundingBox!.min.y
+  geom.translate(0, -drop, 0)
+
   const mat = makeRamp({
     vertexColors: true,
     shadowAttribute: true,
@@ -420,22 +622,37 @@ export function buildDog(pose: DogPose = DOG_LOOK_BACK, occlusion = 0): THREE.Gr
   mat.name = 'dog'
 
   // The collar. Its own mesh, its own material, named for its asset id.
-  // Red-audit whitelist entry 1 of 2. It wraps the NECK, behind the jaw.
-  // Wide and shallow, so its silhouette is a ring from any angle. A deep,
-  // narrow torus reads as a red tab hanging off the front of the throat.
-  // A BAND, not a torus. A torus of tube radius 0.018 presents a thin bright
-  // curve to the camera and, seen at an angle, its near and far limbs merge:
-  // it rendered as a diagonal red slash down one side of the neck with
-  // stair-stepped edges, which is a red mark ON the dog rather than a collar
-  // AROUND him. A sleeve — an open cylinder sharing the neck's axis, with real
-  // width along it — has a silhouette that is a band from every angle including
-  // from behind, which is the angle the game shows most, because he is ahead.
-  const collarGeom = new THREE.CylinderGeometry(0.087, 0.091, 0.052, 14, 1, true)
-  collarGeom.rotateX(0.78) // shares the neck capsule's tilt
-  // Down at the base of the neck, clear of the skull. Sitting level with the
-  // jaw it read as a red sticker on his cheek — a bandage or a luggage tag —
-  // which is a bad thing for the most load-bearing shape in the game to be.
-  const COLLAR_AT: [number, number, number] = [0, NECK_Y - 0.03, NECK_Z - 0.005]
+  // Red-audit whitelist entry 1 of 2.
+  //
+  // A STRAP ON THE NECK, not a scarf on the chest. The previous band was 5.2 cm
+  // wide and 9 cm in radius, sitting where the neck meets the shoulder: it was
+  // wider than the neck it was supposed to go around, so no aperture was ever
+  // visible at any size in any frame and it read as a kerchief. This one shares
+  // the neck's axis, sits just behind the jaw where a collar is buckled, and is
+  // barely wider in radius than the neck it wraps — so the neck passes through
+  // it and the ring is a ring.
+  const COLLAR_R = 0.095
+  const COLLAR_W = 0.03
+  // Mid-neck, not right under the jaw. High on the neck the skull eclipses the
+  // band from behind and above — which is the angle the game shows most, and
+  // the angle at which the collar is the only way to find him.
+  const COLLAR_U = 0.42 // how far up the neck, 0 at the shoulder, 1 at the skull
+  const collarGeom = new THREE.CylinderGeometry(COLLAR_R, COLLAR_R * 1.04, COLLAR_W, 14, 1, true)
+  tiltX(collarGeom, NECK_TILT)
+  const COLLAR_AXIS = new THREE.Vector3(0, 1, 0)
+    .applyAxisAngle(new THREE.Vector3(1, 0, 0), NECK_TILT)
+    .applyAxisAngle(new THREE.Vector3(0, 1, 0), pose.neckY)
+  const cx = Math.sin(pose.neckY)
+  const cz = Math.cos(pose.neckY)
+  const lx = 0
+  const ly = NECK_BASE[1] + Math.cos(NECK_TILT) * NECK_LEN * COLLAR_U
+  const lz = Math.sin(NECK_TILT) * NECK_LEN * COLLAR_U
+  collarGeom.rotateY(pose.neckY)
+  const COLLAR_AT: [number, number, number] = [
+    NECK_BASE[0] + lx * cz + lz * cx,
+    ly - drop,
+    NECK_BASE[2] + lz * cz - lx * cx,
+  ]
   collarGeom.translate(COLLAR_AT[0], COLLAR_AT[1], COLLAR_AT[2])
   const collarMat = makeRamp({
     color: DOG.collar.hex,
@@ -453,8 +670,16 @@ export function buildDog(pose: DogPose = DOG_LOOK_BACK, occlusion = 0): THREE.Gr
     // half pixels of radius is five pixels across, which is the smallest thing
     // that survives the sampler as a coloured mark rather than as a tint on one
     // grey pixel. It costs nothing up close, where the factor is exactly 1.
+    // Measured and kept: docs/decisions.md D21.
     minScreenRadiusPx: 2.5,
     minScreenCenter: COLLAR_AT,
+    // The band's own axis, so the strap keeps a readable stroke at range as
+    // well as a readable radius. See RampMaterial. Taken through exactly the
+    // transforms the geometry took: an approximation here shears the ring,
+    // because each vertex is then pushed a different distance along an axis
+    // that is not the one it is a ring around.
+    minScreenAxis: [COLLAR_AXIS.x, COLLAR_AXIS.y, COLLAR_AXIS.z],
+    minScreenWidthPx: 1.1,
     side: THREE.DoubleSide,
   })
   collarMat.name = DOG.collar.id
@@ -463,7 +688,7 @@ export function buildDog(pose: DogPose = DOG_LOOK_BACK, occlusion = 0): THREE.Gr
   g.add(new THREE.Mesh(geom, mat))
   g.add(new THREE.Mesh(collarGeom, collarMat))
   g.userData.materials = [mat, collarMat]
-  g.userData.height = 0.6
-  g.userData.footprint = 0.28
+  g.userData.height = 0.7
+  g.userData.footprint = 0.3
   return g
 }
