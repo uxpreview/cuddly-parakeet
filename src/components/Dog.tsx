@@ -40,14 +40,25 @@ const ASIDE_RATE = 0.55
 /**
  * The trot weave: amplitude in metres, and its WAVELENGTH in metres of route.
  *
- * It has to be 2*pi*s/L, not s/L. Written as the latter the constant is a rate
- * and not a wavelength, and 5.2 gave a period of 32.7 m: over the walk take's
- * whole 26 m of dog route the cross-track deviation changed sign ONCE, which is
- * a slow bow and not a weave. That is why the trail stayed a ribbon and the
- * fusion barely moved.
+ * The number that matters is neither of these on its own -- it is the SLOPE they
+ * imply, 2*pi*A/L, which is how far off the line of travel he is pointing. Both
+ * previous values got that wrong in opposite directions, and I set both without
+ * computing it:
+ *
+ *   A 0.75, L 32.7   0.144 m/m,  8 deg   one bow across a whole take
+ *   A 0.75, L  7.5   0.628 m/m, 32 deg   a slalom: dog paw slide p99 went from
+ *                                        1.9 mm to 37.7 mm and print alternation
+ *                                        from 100% to 48%, because the body
+ *                                        swings that far sideways while a foot
+ *                                        is planted
+ *   A 0.30, L 16.0   0.118 m/m,  7 deg   what a trotting dog actually does
+ *
+ * Seven degrees is the brief: he is not walking a ruled line, and he is not
+ * slaloming either. A 16 m wavelength puts about one and a half cycles into a
+ * take, which is a wander rather than a bow.
  */
-const WEAVE_AMP = 0.75
-const WEAVE_LEN = 7.5
+const WEAVE_AMP = 0.3
+const WEAVE_LEN = 16
 const TAU = Math.PI * 2
 /** How fast the weave fades in and out at a node boundary, per second. */
 const WEAVE_EASE = 1.1
