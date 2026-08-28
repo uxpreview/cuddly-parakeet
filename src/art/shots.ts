@@ -49,8 +49,14 @@ export const RIM_STAGE = { boy: 319, dog: 330, trailFrom: 306 }
  * The ford. The chapter's water moment is a hazard-wait: he waits on the far
  * side while the boy is in the crossing. Submitting the river empty of both of
  * them describes the material and not the beat.
+ *
+ * These two stand exactly here — the ford is the one shot the light search is
+ * turned off for. The whole reach is in terrain shadow, so the search has
+ * nothing to find and wanders: it put the boy nine samples upstream, which is
+ * two and a half metres BEHIND the camera, and the frame that is supposed to
+ * show a boy in the crossing had no boy in it at all. Sample 99 is mid-channel.
  */
-export const FORD_STAGE = { boy: 97, dog: 106, trailFrom: 88 }
+export const FORD_STAGE = { boy: 99, dog: 106, trailFrom: 88 }
 
 type Ground = (x: number, z: number, fromY: number) => { y: number } | null
 /**
@@ -66,6 +72,19 @@ function sampleAt(art: ArtTerrain, i: number) {
   const c = art.centerline[Math.max(0, Math.min(art.centerline.length - 1, Math.round(i)))]
   return { x: c[0], y: c[1], z: c[2], h: c[3] }
 }
+
+/**
+ * The centreline's heading as a three.js YAW.
+ *
+ * They are not the same number and the difference is a right angle. The art
+ * terrain stores `h` such that the cross-section's lateral axis is
+ * (sin h, -cos h) — so travel is (cos h, sin h) — while a yaw in this engine
+ * means travel is (sin yaw, cos yaw). Every conversion between them is
+ * `PI/2 - h`, and doing it by hand at each call site is how the dog came to be
+ * staged square across the canyon for the whole of Gate 2 with a comment
+ * saying his body pointed the way he was going.
+ */
+const routeYaw = (art: ArtTerrain, i: number) => Math.PI / 2 - sampleAt(art, i).h
 
 function offset(art: ArtTerrain, i: number, lateral: number, ground: Ground) {
   const s = sampleAt(art, i)
@@ -92,6 +111,42 @@ function offset(art: ArtTerrain, i: number, lateral: number, ground: Ground) {
  * within reach is lit, the original staging stands rather than the actor being
  * teleported somewhere the shot was not composed for.
  */
+/**
+ * A staged spot, and how to point at another one. `headingTo` is what the hero
+ * camera's yaw is built from, so it lives with the spot rather than being
+ * re-derived at every call site.
+ */
+interface Spot {
+  at: THREE.Vector3
+  i: number
+  lat: number
+  headingTo: (other: THREE.Vector3) => number
+}
+
+const spot = (at: THREE.Vector3, i: number, lat: number): Spot => ({
+  at,
+  i,
+  lat,
+  headingTo: (other) => Math.atan2(other.x - at.x, other.z - at.z),
+})
+
+/** The hero camera, and the horizontal bearing of a world point through it. */
+function rigCamera(at: THREE.Vector3, yaw: number) {
+  const pitch = (RIG.pitchDeg * Math.PI) / 180
+  const hd = RIG.dist * Math.cos(pitch)
+  const vd = RIG.dist * Math.sin(pitch)
+  const pos = new THREE.Vector3(
+    at.x - Math.sin(yaw) * hd,
+    at.y + RIG.lookHeight + vd,
+    at.z - Math.cos(yaw) * hd,
+  )
+  return {
+    pos,
+    yaw,
+    bearing: (p: THREE.Vector3) => Math.atan2(p.x - pos.x, p.z - pos.z) - yaw,
+  }
+}
+
 function stageInLight(
   art: ArtTerrain,
   i: number,
@@ -101,21 +156,28 @@ function stageInLight(
   eyeHeight: number,
   span: number,
   sky?: SunOcc,
-): { at: THREE.Vector3; i: number; lat: number } {
+  /** Extra cost for a spot, in the same units as occlusion. Staging, not light. */
+  extra?: (p: THREE.Vector3) => number,
+): Spot {
   const at = offset(art, i, lat, ground)
-  if (!sun) return { at, i, lat }
+  if (!sun) return spot(at, i, lat)
   // Contact darkening reaches its floor at 0.34 of sky view and stops mattering
   // above it, so that is where the penalty is measured from.
+  const _c = new THREE.Vector3()
   const cost = (x: number, y: number, z: number) =>
-    sun(x, y + eyeHeight, z) + (sky ? Math.max(0, 0.34 - sky(x, y + 0.25, z)) * 1.6 : 0)
+    sun(x, y + eyeHeight, z) +
+    (sky ? Math.max(0, 0.34 - sky(x, y + 0.25, z)) * 1.6 : 0) +
+    (extra ? extra(_c.set(x, y, z)) : 0)
   let best = { at, i, lat, occ: cost(at.x, at.y, at.z) }
-  if (best.occ <= 0.01) return best
+  if (best.occ <= 0.01) return spot(best.at, best.i, best.lat)
 
   // Nearest first, so the actor moves as little as the light allows.
   const order: number[] = [0]
   for (let d = 1; d <= span; d++) order.push(d, -d)
   for (const di of order) {
-    for (const dl of [0, 0.45, -0.45, 0.9, -0.9, 1.35, -1.35]) {
+    // Wider than it was: separating the two of them in the frame is a lateral
+    // problem, and half a metre of shuffle cannot solve it at fourteen metres.
+    for (const dl of [0, 0.45, -0.45, 0.9, -0.9, 1.35, -1.35, 1.9, -1.9, 2.5, -2.5]) {
       const ii = i + di
       const ll = lat + dl
       const p = offset(art, ii, ll, ground)
@@ -130,10 +192,10 @@ function stageInLight(
       // dog a third occluded in every canyon shot: a third occluded still costs
       // his coat thirty percent of the distance to its shade value, and the
       // documented #E5D5BC then never renders anywhere in the bible.
-      if (best.occ <= 0.01) return best
+      if (best.occ <= 0.01) return spot(best.at, best.i, best.lat)
     }
   }
-  return best
+  return spot(best.at, best.i, best.lat)
 }
 
 export function buildStage(
@@ -155,8 +217,48 @@ export function buildStage(
   const dogLat0 = 0.85
 
   // The dog first: he is the subject, so he gets the pick of the light.
-  const dogSpot = stageInLight(art, di0, dogLat0, ground, sun, 0.4, span, sky)
+  let dogSpot = stageInLight(art, di0, dogLat0, ground, sun, 0.4, span, sky)
   const boySpot = stageInLight(art, bi0, boyLat0, ground, sun, 0.9, span, sky)
+
+  // Then again, with the frame in the argument.
+  //
+  // In the Gate 2 set the dog stood directly ON the boy's head in both aspect
+  // ratios — `hero-portrait` had the dog at y 800-910 and the boy's crown at
+  // 915 — because the hero camera looks down the boy's line of travel and the
+  // dog is staged straight ahead on it. That is not an art failure and it does
+  // not fix itself by moving the camera: both characters move together when the
+  // camera does. The dog has to stand off the line.
+  //
+  // So the second pass costs the light AND the horizontal angle between the two
+  // of them as the hero camera sees it. A tenth of a radian is about six
+  // degrees, which at the distances this shot stages is comfortably more than
+  // the boy's own silhouette is wide.
+  {
+    const bh = routeYaw(art, boySpot.i)
+    const cam = rigCamera(boySpot.at, bh)
+    const boyBear = cam.bearing(boySpot.at)
+    dogSpot = stageInLight(art, di0, dogLat0, ground, sun, 0.4, span, sky, (p) => {
+      const bear = Math.abs(cam.bearing(p) - boyBear)
+      const d = p.distanceTo(boySpot.at)
+      let c = 0
+      // Clear of the boy, and still inside the narrower of the two frames. The
+      // portrait crop is 19.5:9 with a 55-degree VERTICAL field, which is only
+      // 27 degrees across — 0.24 rad from the axis to the frame edge — so a
+      // separation that reads on the desktop can put him off the phone entirely.
+      // He was at x = -325 the first time this ran.
+      if (bear < 0.085) c += (0.085 - bear) * 12
+      if (bear > 0.165) c += (bear - 0.165) * 12
+      // And AHEAD on the trail, measured along the way the boy is going — not
+      // merely far from him. Straight-line distance let the search park him
+      // four metres behind the camera, which satisfies every framing test and
+      // is not a chase.
+      void d
+      const ahead = (p.x - boySpot.at.x) * Math.sin(bh) + (p.z - boySpot.at.z) * Math.cos(bh)
+      if (ahead < 8) c += (8 - ahead) * 0.5
+      if (ahead > 11) c += (ahead - 11) * 0.35
+      return c
+    })
+  }
   const di = dogSpot.i
   const bi = boySpot.i
   const boyLat = boySpot.lat
@@ -164,10 +266,19 @@ export function buildStage(
 
   const boyAt = boySpot.at
   const dogAt = dogSpot.at
-  const boyHeading = Math.atan2(dogAt.x - boyAt.x, dogAt.z - boyAt.z)
+  // The boy faces the way he is GOING, not at the dog.
+  //
+  // He used to face the dog, and the hero camera settles behind the boy's
+  // heading — so the camera was always aimed exactly at the dog, and no amount
+  // of moving either of them could separate them: the dog stood on the boy's
+  // head at a measured horizontal gap of 0 px in both aspect ratios. It is also
+  // not what the game does. `CameraRig` settles behind the direction of travel
+  // and biases the composition toward the dog by a quarter; it never points at
+  // him.
+  const boyHeading = routeYaw(art, bi)
   // he has stopped and turned his head back up the path; the body still points
   // the way he was going
-  const dogHeading = sampleAt(art, di).h
+  const dogHeading = routeYaw(art, di)
 
   // Prints. Spacing is stride, not sample spacing: the boy's stride is ~0.62 m
   // and the dog's trotting print pairs land about every 0.7 m, per
@@ -237,17 +348,26 @@ export function buildStage(
 /** The gameplay follow camera, parked. This is the frame the game is played in. */
 function rigShot(stage: Stage, art: ArtTerrain): Shot {
   const p = stage.boy.at
-  const yaw = stage.boy.heading
-  const pitch = (RIG.pitchDeg * Math.PI) / 180
-  const hd = RIG.dist * Math.cos(pitch)
-  const vd = RIG.dist * Math.sin(pitch)
+  const cam = rigCamera(p, stage.boy.heading)
   void art
+  // The rig's own lead, and the rig's own dog bias: when the dog is near and
+  // roughly in front, the look target lerps a quarter of the way toward the
+  // midpoint of the two of them. Reproducing that here is what makes this shot
+  // the frame the game is actually played in rather than a viewpoint that
+  // resembles it.
+  const look = new THREE.Vector3(
+    p.x + Math.sin(stage.boy.heading) * 1.8,
+    p.y + RIG.lookHeight,
+    p.z + Math.cos(stage.boy.heading) * 1.8,
+  )
+  const mid = p.clone().add(stage.dog.at).multiplyScalar(0.5)
+  mid.y += 0.6
+  look.lerp(mid, 0.25)
   return {
     id: 'hero',
     label: 'Hero: the frame the game is played in',
-    position: [p.x - Math.sin(yaw) * hd, p.y + RIG.lookHeight + vd, p.z - Math.cos(yaw) * hd],
-    // lead toward where he is going, exactly as the rig does
-    lookAt: [p.x + Math.sin(yaw) * 1.8, p.y + RIG.lookHeight, p.z + Math.cos(yaw) * 1.8],
+    position: [cam.pos.x, cam.pos.y, cam.pos.z],
+    lookAt: [look.x, look.y, look.z],
     fov: RIG.fov,
   }
 }

@@ -710,7 +710,15 @@ export function buildCollar(): THREE.Mesh {
     // well as a readable radius. Taken through exactly the transforms the
     // geometry took: an approximation here shears the ring.
     minScreenAxis: [axis.x, axis.y, axis.z],
-    minScreenWidthPx: 1.1,
+    // 1.8, not 1.1. The band's radius floor holds its width across the frame,
+    // but a ring seen from behind and above — which is the angle the game shows
+    // most — projects as an ellipse whose SHORT axis is the one the radius
+    // floor does not defend. Measured at trail distance the collar came back
+    // 6 px by 3 at 42% saturation after a blur, against 6 by 4 at 55% when the
+    // dog was four metres from the camera. Thickening the strap along its own
+    // axis is what puts the short axis back, and up close the factor is still
+    // exactly 1.
+    minScreenWidthPx: 2.6,
     side: THREE.DoubleSide,
   })
   mat.name = DOG.collar.id

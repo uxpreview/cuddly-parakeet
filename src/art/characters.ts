@@ -183,16 +183,17 @@ export function buildDog(pose: DogPose = DOG_LOOK_BACK, occlusion = 0): THREE.Gr
   // and nothing else. Keeping it a separate mesh with a separate material is
   // what lets the red audit whitelist exactly one asset id.
   const collar = buildCollar()
-  const neck = jointMatrix(dogDefOf(), p, 'neck')
-  collar.applyMatrix4(neck)
+  // `applyMatrix4` on an Object3D moves the OBJECT, not its geometry — so the
+  // collar's local frame is now the neck's, which is exactly the frame its
+  // geometry and its screen-size floor were authored in. Transforming the
+  // floor's centre by the same matrix on top of that applied the neck twice:
+  // the centre landed 40 cm from the ring it is supposed to be the middle of,
+  // so `need / radius` came out near 1 and D21's floor did nothing. Measured,
+  // the collar fell to one and two pixels at trail distance in `vista` and
+  // `prints`, and raising the floor to twelve pixels changed nothing at all,
+  // which is what said it was not a tuning problem.
+  collar.applyMatrix4(jointMatrix(dogDefOf(), p, 'neck'))
   const mn = collar.material as THREE.ShaderMaterial
-  // The screen-size floor is stated in the MESH's own space, and the mesh has
-  // just had the neck's transform baked into it, so its centre and its axis
-  // have to take exactly the same trip. An approximation here shears the ring.
-  mn.uniforms.uMinScreenCenter.value.applyMatrix4(neck)
-  mn.uniforms.uMinScreenAxis.value
-    .applyMatrix3(new THREE.Matrix3().setFromMatrix4(neck))
-    .normalize()
 
   const g = new THREE.Group()
   g.add(new THREE.Mesh(geom, mat))

@@ -335,6 +335,14 @@ export interface ArtScene {
    * water — standing on the collision height leaves the boy on top of the river.
    */
   groundAt: (x: number, z: number) => number | null
+  /** Dev-only: the fitted shoreline at a centreline sample. See river.mjs. */
+  riverAt: (i: number) => {
+    leg: string
+    level: number
+    left: number
+    right: number
+    depth: number
+  } | null
 }
 
 // Coarse heightfield + shadow march. Built once at load; the whole canyon
@@ -646,10 +654,23 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
     // so the fast octave belongs on the height axis and is quantised into
     // steps: hard ledges with a slight outward batter, wandering along the
     // wall's run so no ledge is a continuous ribbon.
-    const n1 = vnoise(idx / 3.4, kk * 3 + 1)
-    const bedRaw = vnoise(idx / 6.5, kk * 11 + 41)
+    // Both of these vary ALONG the run, and how fast they vary is what decides
+    // whether a wall reads as bedded limestone or as a woven check.
+    //
+    // `bed` is quantised on purpose — that is what makes a ledge a ledge rather
+    // than a gradient — and a quantised value that crosses a level every six
+    // samples steps every six samples, which at 1.5 m a sample is a vertical
+    // joint every nine metres. In the mid-distance buttresses of `vista` that
+    // measured 13 to 15 px apart: columnar jointing at 1:1 and a woven check at
+    // 3x, with the horizontal strata crossed by a regular comb. Bedding planes
+    // run for tens of metres before they step. At 1/17 a ledge holds for about
+    // twenty-five metres, and the seed carries the rung index so no two rungs
+    // step at the same sample — which is what breaks the SPACING rather than
+    // merely lengthening it.
+    const n1 = vnoise(idx / 11, kk * 3 + 1)
+    const bedRaw = vnoise(idx / 17 + kk * 0.31, kk * 11 + 41)
     const bed = Math.round(bedRaw * 3) / 3 // stepped, not smooth
-    const n2 = vnoise(idx / 5.1, kk * 3 + 2) * 0.55 + bed * 0.45
+    const n2 = vnoise(idx / 12.5, kk * 3 + 2) * 0.55 + bed * 0.45
     // Lateral wander is kept small on purpose. A cliff that wobbles a metre in
     // and out between rungs stops standing up: its faces tilt back, catch the
     // sun on their tops, and the whole wall reads as a pale drape. Most of the
@@ -774,50 +795,51 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
   const _sc = new THREE.Vector3()
   const _sd = new THREE.Vector3()
 
+  // How many sub-faces a rung gap is split into is decided ONCE PER RUNG, for
+  // the WHOLE CANYON, from the widest and steepest that rung ever is.
+  //
+  // It was once per rung per LEG, which fixed the along-the-run case and left
+  // the other one: two legs share their boundary sample, so a rung split five
+  // ways in one leg meeting the same rung split six ways in the next is a row
+  // of T-junctions down the seam between them. Measured in the Gate 2 set that
+  // was 11 to 184 hairline pixels a frame, worst in `ford-desktop`, where three
+  // leg boundaries fall inside one view. One count for the whole chapter means
+  // every strip in the canyon shares its neighbours' vertices exactly, whichever
+  // leg either of them belongs to.
+  const subForRung: number[] = []
+  {
+    const nk = Math.max(...art.legs.map((l) => l.chain.length))
+    for (let k = 0; k < nk - 1; k++) {
+      let widest = 0
+      let steepest = 0
+      for (const leg of art.legs) {
+        if (k + 1 >= leg.chain.length) continue
+        let steepSum = 0
+        let n = 0
+        for (let i = leg.range[0]; i <= leg.range[1]; i++) {
+          const p0 = chainPoint(leg, i, k)
+          const p1 = chainPoint(leg, i, k + 1)
+          const w = p0.distanceTo(p1)
+          if (w > widest) widest = w
+          if (w > 1e-4) {
+            steepSum += Math.abs(p1.y - p0.y) / w
+            n++
+          }
+        }
+        if (n) steepest = Math.max(steepest, steepSum / n)
+      }
+      // A STEEP rung gets smaller faces than a level one. At 1.2 m everywhere a
+      // bank whose rungs are a metre apart is never subdivided at all, so the
+      // bedding relief has no interior vertices to act on and the wall renders
+      // as one smooth sheet. The cliffs are what flat shading exists to expose.
+      const target = steepest > 0.5 ? 0.62 : MAX_SPAN
+      subForRung[k] = Math.max(1, Math.min(24, Math.ceil(widest / target)))
+    }
+  }
+
   for (const leg of art.legs) {
     const a = leg.range[0]
     const b = leg.range[1]
-    // How many sub-faces a rung gap is split into is decided ONCE PER RUNG, from
-    // the widest gap that rung has anywhere along this leg.
-    //
-    // It used to be decided per sample from that sample's own gap, so where the
-    // canyon narrows or widens two adjacent strips could disagree — and a strip
-    // split into five meeting a strip split into six is a row of T-junctions.
-    // They show: 321 pixels of hairline seam in `vista-portrait`, single
-    // desaturated pixels on lit cliffs where the sky shows through the mesh
-    // (e.g. (154,210) measuring #D9D2B6 at 0.161 saturation between neighbours
-    // at 0.383). One count per rung means every strip shares its neighbours'
-    // vertices exactly.
-    const subForRung: number[] = []
-    for (let k = 0; k < leg.chain.length - 1; k++) {
-      let widest = 0
-      let steepSum = 0
-      let n = 0
-      for (let i = a; i <= b; i++) {
-        const p0 = chainPoint(leg, i, k)
-        const p1 = chainPoint(leg, i, k + 1)
-        const w = p0.distanceTo(p1)
-        if (w > widest) widest = w
-        if (w > 1e-4) {
-          steepSum += Math.abs(p1.y - p0.y) / w
-          n++
-        }
-      }
-      // A STEEP rung gets smaller faces than a level one.
-      //
-      // At 1.2 m everywhere, a bank whose rungs happen to be a metre apart was
-      // never subdivided at all — so it had no interior vertices, so the bedding
-      // relief had nowhere to act, so it rendered as a single smooth sheet. Ten
-      // consecutive faces of the near wall in hero came back with every normal
-      // inside a nine-degree cone and every vertex colour within 0.011: many
-      // polygons, one shade, which is the airbrush wearing flat shading's
-      // clothes. The cliffs are the surfaces flat shading exists to expose and
-      // they are the ones that need faces to expose them with; the canyon floor
-      // is nearly planar and gains nothing from more.
-      const steep = n ? steepSum / n : 0
-      const target = steep > 0.5 ? 0.62 : MAX_SPAN
-      subForRung[k] = Math.max(1, Math.min(24, Math.ceil(widest / target)))
-    }
     for (let i = a; i < b; i++) {
       for (let k = 0; k < leg.chain.length - 1; k++) {
         const sub = subForRung[k]
@@ -1014,8 +1036,20 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
   // --- the river ------------------------------------------------------------
   // Flat colour, faint still riffle banding, no reflection, no specular, no
   // normal map. Depth is told by hue alone, which is the only thing water is
-  // allowed to do here. The surface follows the floor it cut rather than
-  // stepping between legs, so it reads as one reach.
+  // allowed to do here.
+  //
+  // The surface is fitted to the bank rather than described independently of
+  // it: at each sample the cross-section is walked outward from its lowest
+  // point until the ground rises through the water level, and that crossing IS
+  // the shoreline, to the centimetre, jitter included. Nothing in the chapter
+  // data says how wide the river is or where its edge falls.
+  //
+  // What that replaces: reaches expressed as fractional rung indices, which cut
+  // a sawtooth into a bank that wanders per sample, and which meant nothing at
+  // all in a neighbouring leg with a different cross-section — the ford's
+  // bank-to-bank crossing was being drawn across bank4's rungs, where the same
+  // index is halfway up a cliff. That is the straight cut through the channel
+  // in `ford-desktop`, and the polygon the Gate 1 verdict called ill-fitted.
   const byWater = new Map<string, MeshBuilder>()
   const _wa = new THREE.Vector3()
   const _wb = new THREE.Vector3()
@@ -1027,33 +1061,119 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
     const t = kf - k0
     return new THREE.Vector3(_wa.x + (_wb.x - _wa.x) * t, y, _wa.z + (_wb.z - _wa.z) * t)
   }
-  for (const w of art.waters) {
-    let mb = byWater.get(w.material)
-    if (!mb) {
-      mb = new MeshBuilder()
-      byWater.set(w.material, mb)
+  /** Bed height at a fractional rung index. */
+  const bedAt = (i: number, kf: number) => {
+    const k0 = Math.floor(kf)
+    chainPointAt(i, k0, _wa)
+    chainPointAt(i, k0 + 1, _wb)
+    return _wa.y + (_wb.y - _wa.y) * (kf - k0)
+  }
+  /**
+   * Where the water meets the bank, as a fractional rung index either side of
+   * the channel's lowest point. Null where the bed never goes under the level.
+   */
+  const _wp = new THREE.Vector3()
+  const shoreline = (i: number, level: number): [number, number] | null => {
+    const n = art.legs[legIndexAt[Math.max(0, Math.min(C.length - 1, i))]].chain.length
+    const ys: number[] = []
+    let low = 0
+    for (let k = 0; k < n; k++) {
+      chainPointAt(i, k, _wp)
+      ys.push(_wp.y)
+      if (_wp.y < ys[low]) low = k
     }
-    const src = SURFACE[w.material] ?? SURFACE.river
-    // One sample of overlap into each neighbour. A reach that stops exactly at
-    // its own range boundary leaves the water plane's straight edge hanging in
-    // mid-air, which at the ford read as a torn sticker across the sand.
-    const a = Math.max(0, w.range[0] - 1)
-    const b = Math.min(C.length - 1, w.range[1] + 1)
-    const span = w.toK - w.fromK
-    const SEG = Math.max(1, Math.min(6, Math.round(span * 1.5)))
-    for (let i = a; i < b; i++) {
-      const li = i - w.range[0]
-      const y0 = w.levels[Math.max(0, Math.min(w.levels.length - 1, li))]
-      const y1 = w.levels[Math.max(0, Math.min(w.levels.length - 1, li + 1))]
+    if (ys[low] >= level) return null
+    // If the bed never comes back up on one side, there is no bank there and no
+    // river either — a reach whose shore runs to the end of the cross-section
+    // is a water plane laid across the canyon floor, which is what it did.
+    const cross = (from: number, step: number): number | null => {
+      for (let k = from; k >= 0 && k < n; k += step) {
+        if (ys[k] >= level) {
+          const prev = k - step
+          const d = ys[k] - ys[prev]
+          const t = d === 0 ? 0 : (level - ys[prev]) / d
+          return prev + t * step
+        }
+      }
+      return null
+    }
+    const a = cross(low - 1, -1)
+    const b = cross(low + 1, 1)
+    return a === null || b === null ? null : [a, b]
+  }
+  // Depth buckets, in metres. "A lighter band over the gravel at each shore,
+  // the documented river value through the middle." That, and nothing else, is
+  // what water is allowed to do here.
+  const depthMaterial = (base: string, depth: number) =>
+    base === 'riverDeep' ? 'riverDeep' : depth < 0.22 ? 'riverShallow' : depth < 1.0 ? 'river' : 'riverDeep'
+
+  /**
+   * The shoreline, smoothed along the run.
+   *
+   * The crossing widens from one metre to nine over three samples where the
+   * river swings across the trail, and a shore taken per sample steps by that
+   * whole amount at each strip boundary — which is the sawtooth notch at the
+   * bank. Averaging over five samples costs nothing where the bank is straight
+   * and turns the notches into the curve the bank actually is.
+   */
+  const shoreSmooth = (w: ArtTerrain['waters'][number], i: number): [number, number] | null => {
+    const levelAt = (j: number) =>
+      w.levels[Math.max(0, Math.min(w.levels.length - 1, j - w.range[0]))]
+    let l = 0
+    let r = 0
+    let n = 0
+    for (let d = -2; d <= 2; d++) {
+      const j = i + d
+      if (j < w.range[0] || j > w.range[1]) continue
+      const sh = shoreline(j, levelAt(j))
+      if (!sh) continue
+      l += sh[0]
+      r += sh[1]
+      n++
+    }
+    if (!n) return null
+    const own = shoreline(i, levelAt(i))
+    if (!own) return null
+    // Blend toward the neighbourhood rather than replacing: the shore still has
+    // to be ON the bank at this sample, not two samples away.
+    return [own[0] * 0.4 + (l / n) * 0.6, own[1] * 0.4 + (r / n) * 0.6]
+  }
+
+  for (const w of art.waters) {
+    const bucketOf = (id: string) => {
+      let mb = byWater.get(id + '|' + w.opacity)
+      if (!mb) {
+        mb = new MeshBuilder()
+        byWater.set(id + '|' + w.opacity, mb)
+      }
+      return mb
+    }
+    const levelAt = (i: number) =>
+      w.levels[Math.max(0, Math.min(w.levels.length - 1, i - w.range[0]))]
+    for (let i = w.range[0]; i < w.range[1]; i++) {
+      const y0 = levelAt(i)
+      const y1 = levelAt(i + 1)
+      const s0 = shoreSmooth(w, i)
+      const s1 = shoreSmooth(w, i + 1)
+      if (!s0 || !s1) continue
+      const SEG = 8
       for (let k = 0; k < SEG; k++) {
-        const kf0 = w.fromK + (span * k) / SEG
-        const kf1 = w.fromK + (span * (k + 1)) / SEG
+        const a0 = s0[0] + ((s0[1] - s0[0]) * k) / SEG
+        const a1 = s0[0] + ((s0[1] - s0[0]) * (k + 1)) / SEG
+        const b0 = s1[0] + ((s1[1] - s1[0]) * k) / SEG
+        const b1 = s1[0] + ((s1[1] - s1[0]) * (k + 1)) / SEG
+        const depth = Math.max(
+          0,
+          y0 - (bedAt(i, (a0 + a1) / 2) + bedAt(i + 1, (b0 + b1) / 2)) / 2,
+        )
+        const id = depthMaterial(w.material, depth)
+        const src = SURFACE[id] ?? SURFACE.river
         const tone = 1 + Math.max(0, vnoise(i / 2.6, k * 11 + 3)) * 0.05
-        mb.quad(
-          waterPoint(i, kf0, y0),
-          waterPoint(i + 1, kf0, y1),
-          waterPoint(i + 1, kf1, y1),
-          waterPoint(i, kf1, y0),
+        bucketOf(id).quad(
+          waterPoint(i, a0, y0),
+          waterPoint(i + 1, b0, y1),
+          waterPoint(i + 1, b1, y1),
+          waterPoint(i, a1, y0),
           src.hex,
           src.shadow,
           tone,
@@ -1061,24 +1181,57 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
       }
     }
   }
-  for (const [id, mb] of byWater) {
+  for (const [key, mb] of byWater) {
     if (mb.empty) continue
-    const src = art.waters.find((w) => w.material === id)
+    const [id, op] = key.split('|')
+    const opacity = Number(op)
     const mat = makeRamp({
       vertexColors: true,
       shadowAttribute: true,
       shadowKey: CH1.limestoneShadow.hex,
-    ramp: WORLD_RAMP,
+      ramp: WORLD_RAMP,
       hazeFloor: art.hazeFloor,
       hazeDepth: art.hazeDepth,
-      transparent: (src?.opacity ?? 1) < 1,
-      opacity: src?.opacity ?? 1,
-      depthWrite: (src?.opacity ?? 1) >= 1,
+      transparent: opacity < 1,
+      opacity,
+      depthWrite: opacity >= 1,
       side: THREE.DoubleSide,
     })
     mat.name = 'water:' + id
     materials.push(mat)
     group.add(new THREE.Mesh(mb.geometry(), mat))
+  }
+
+  /**
+   * Dev-only: the fitted shoreline at one sample, in metres from the
+   * centreline. tools/dev/river.mjs reads it, because "is the river the right
+   * shape" is two numbers a sample and not a screenshot.
+   */
+  const riverAt = (i: number) => {
+    const w = art.waters.find((q) => i >= q.range[0] && i <= q.range[1])
+    if (!w) return null
+    const level = w.levels[Math.max(0, Math.min(w.levels.length - 1, i - w.range[0]))]
+    const sh = shoreSmooth(w, i)
+    if (!sh) return null
+    const c = centerAt(i)
+    const lx = Math.sin(c[3])
+    const lz = -Math.cos(c[3])
+    const lat = (kf: number) => {
+      const p = waterPoint(i, kf, 0)
+      return (p.x - c[0]) * lx + (p.z - c[2]) * lz
+    }
+    let deepest = 0
+    for (let t = 0; t <= 16; t++) {
+      const kf = sh[0] + ((sh[1] - sh[0]) * t) / 16
+      deepest = Math.max(deepest, level - bedAt(i, kf))
+    }
+    return {
+      leg: art.legs[legIndexAt[Math.max(0, Math.min(C.length - 1, i))]].name,
+      level,
+      left: lat(sh[0]),
+      right: lat(sh[1]),
+      depth: deepest,
+    }
   }
 
   // --- scatter: pines, boulders, scrub -------------------------------------
@@ -1386,6 +1539,7 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
     hazeFloor: art.hazeFloor,
     materials,
     sunOcclusionAt: (x, y, z) => shadow.sample(x, y, z),
+    riverAt,
     skyViewAt: (x, y, z) => shadow.skyViewCached(x, y, z),
     groundAt,
   }
