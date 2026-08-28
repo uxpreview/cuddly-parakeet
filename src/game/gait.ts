@@ -124,6 +124,8 @@ export class Gait {
   private supportY: number | null = null
   private lastDt = 1 / 60
   private lastSpeed = 0
+  /** True on the frame after a pose released the legs; see `hold`. */
+  private wasHeld = false
 
   constructor(readonly spec: GaitSpec) {
     this.feet = spec.phases.map(() => ({
@@ -230,7 +232,17 @@ export class Gait {
     if (hold) {
       this.stillFor = 0
       this.closing = false
+      this.wasHeld = true
       return
+    }
+    // Coming OUT of a hold, the plan is stale by definition: the pose owned the
+    // legs while it lasted and the body may have turned or moved underneath it.
+    // Resuming on the old plan is what left the ford's front left 438 mm from
+    // where the planner still believed it was, for the frame or two before the
+    // next plant caught up. Re-stage against where the feet actually are.
+    if (this.wasHeld) {
+      this.wasHeld = false
+      this.restage(root, heading)
     }
 
     // Standing still leaves the feet wherever they were last put, and the body
