@@ -182,6 +182,45 @@ against iteration 1's 1 px and 0 px.
   for a gate about the two characters. Carried forward.
 - **The boy has no hands.** Modelling, not animation. Carried forward.
 
-### Measured after re-recording
+### Measured after re-recording — `renders/g3-03/`
 
-*(pending)*
+`renders/g3-02` was discarded: source changed while its last take was recording,
+so it was a mixed build. `g3-03` is a clean one.
+
+| | iteration 1 | `g3-03` |
+|---|---|---|
+| collar, `walk` f275 | **1 px, 1x1** | **19 px, 5x4 @ 63%** |
+| collar across the `walk` take | 1-7 px, strobing to zero | 16-39 px, 4x4 to 10x5, 56-73% |
+| collar through the play-bow | **0 red px for 0.93 s** | 27-35 px, 6x7 to 7x5, 59-75% |
+| worst support step at rest | 120.1 mm | 16.7 mm (`walk`), 0.0 elsewhere |
+| dog prints, `walk` | 212 in 15.8 s | 97 |
+| boy's arm, lateral excursion | fore-aft only | 62 mm peak to peak |
+| whistle correlate, peak bird span | ~6 px of hairline | 36.9 px, plus dust at his feet |
+| dog on screen, `lookbacks` | 25 px | 28-40 px |
+| dog on screen, `ford` | — | 16-40 px |
+| dog range, `walk` | 11.1 -> 29.2 m, monotonic | 5.0-20.1 m |
+
+The whistle answer as a body event, measured across `walk` t=4.6 to 6.6 s: dog
+speed 2.40 -> 0.23 m/s, `look` 0.00 -> 1.00, and the gap stops opening (7.4 ->
+7.1 m) instead of widening. The play-bow reads in profile — chest down, rear up,
+collar bright — where iteration 1 had a featureless pale lozenge with the red
+switched off.
+
+### Gate 2 has not regressed
+
+A pixel diff against `renders/gate2b-06` is the wrong test: the ford was rebuilt
+and the dog's staging yaw was fixed in earlier Gate 3 commits, both deliberately,
+so 60-89% of every frame differs by design. The Gate 2 *measurements* are the
+test, and all six shots were re-shot at both aspect ratios into
+`renders/g3-gate2check/`:
+
+- **Red audit: PASS.** No red outside the collar.
+- **Seams: 0 px in all six shots.** The carried Gate 2 item — hairline sky-cracks
+  through the cliff mesh, 11 to 134 px a frame, worst in `ford-desktop` — is paid.
+- **The collar clears the banked floor everywhere.** Smallest coherent cluster in
+  the set is now 9x6 px at 54% saturation, against Gate 2's banked smallest of
+  6x4 at 55% and the floor of 5x5 at 21%.
+- **The documented hexes still land**: limestone 18.2% within dE 10, path 24.2%,
+  limestone shadow 8.3%, river 4.7%, pine 1.6%, sky zenith 1.6%.
+- **The hero shot's fusion is gone.** The dog and the boy are separated in both
+  axes; he is no longer standing on the boy's head.
