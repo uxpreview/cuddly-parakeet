@@ -35,11 +35,23 @@ const LAND_FROM = 0.72
 const LAND_SLACK = 0.5
 
 /**
- * How fast the body's support height may move, in metres per second. Rising is
- * muscular and slow; falling is mostly gravity. See the note in supportHeight.
+ * How fast the body's support height may move, in metres per second, when the
+ * character is STANDING STILL. Rising is muscular and slow; falling is mostly
+ * gravity. See the note in supportHeight.
+ *
+ * These are the still-standing floor only. A moving character's body bobs twice
+ * per stride at an amplitude its own dip budget sets, and that bob has to pass
+ * through untouched -- a flat cap throttles it and the legs are then solved
+ * against a body that is not where its own gait put it. Measured with a flat
+ * 0.5 m/s cap: the boy's left foot went from 0.8 mm of p99 reach error to
+ * 293 mm, and the dog's roughly doubled, because a trotting dog's bob needs
+ * 1.8 m/s and a walking boy's needs 0.53. `bobRate` below is that number,
+ * derived from the spec rather than guessed, and the cap is a generous multiple
+ * of it.
  */
-const SUPPORT_RISE = 0.5
-const SUPPORT_FALL = 0.85
+const SUPPORT_STILL_RISE = 0.5
+const SUPPORT_STILL_FALL = 0.9
+const SUPPORT_BOB_HEADROOM = 2.5
 
 /** Scratch for supportHeight, which runs every frame for both characters. */
 const _allow = [0, 0, 0, 0]
@@ -111,6 +123,7 @@ export class Gait {
   /** Rate-limited body height; see supportHeight. null until the first frame. */
   private supportY: number | null = null
   private lastDt = 1 / 60
+  private lastSpeed = 0
 
   constructor(readonly spec: GaitSpec) {
     this.feet = spec.phases.map(() => ({
@@ -212,6 +225,7 @@ export class Gait {
   ): void {
     if (!this.started) this.reset(root, heading, ground)
     this.lastDt = dt
+    this.lastSpeed = speed
     for (const f of this.feet) f.justPlanted = false
     if (hold) {
       this.stillFor = 0
@@ -369,6 +383,12 @@ export class Gait {
    * prevent.
    */
   restage(root: THREE.Vector3, heading: number): void {
+    // A restage is a discontinuity in where the body IS, so the rate limit has
+    // nothing to interpolate from. Left carrying the old height it crawled
+    // across the gap at walking pace with the legs stretched after it, which is
+    // what put 300 mm of reach error on the boy's left foot in the first frames
+    // of every take.
+    this.supportY = null
     let worst = -1
     let worstD = -1
     for (let i = 0; i < this.feet.length; i++) {
@@ -501,7 +521,13 @@ export class Gait {
     else {
       const dt = Math.max(this.lastDt, 1e-4)
       const d = want - this.supportY
-      const cap = (d > 0 ? SUPPORT_RISE : SUPPORT_FALL) * dt
+      // Peak vertical speed of the body's own bob: two dips per stride, of
+      // half the dip budget in amplitude, at this speed's stride rate.
+      const bobRate =
+        (2 * Math.PI * this.lastSpeed * (this.spec.maxDip ?? 0.08)) /
+        Math.max(this.spec.strideLen, 1e-3)
+      const still = d > 0 ? SUPPORT_STILL_RISE : SUPPORT_STILL_FALL
+      const cap = (still + SUPPORT_BOB_HEADROOM * bobRate) * dt
       this.supportY += Math.abs(d) <= cap ? d : Math.sign(d) * cap
     }
     return this.supportY
