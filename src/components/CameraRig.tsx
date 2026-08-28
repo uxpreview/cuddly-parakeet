@@ -39,6 +39,7 @@ const _finalPos = new THREE.Vector3()
 const _finalLook = new THREE.Vector3()
 const _framedPos = new THREE.Vector3()
 const _framedLook = new THREE.Vector3()
+const _seen = new THREE.Vector3()
 
 function wrapAngle(a: number): number {
   return Math.atan2(Math.sin(a), Math.cos(a))
@@ -58,7 +59,11 @@ export function CameraRig() {
   useFrame((_, delta) => {
     if (!world.ready || !world.manifest) return
     const dt = Math.min(delta, 0.05)
-    const p = world.player.pos
+    // Framed on the height he is SEEN at, not the height he collides at. They
+    // are the same everywhere but the ford, where the art bed sits a metre
+    // below its collision slab so the crossing is under water.
+    _seen.set(world.player.pos.x, world.player.visualY, world.player.pos.z)
+    const p = _seen
     const pos = posRef.current
     const look = lookRef.current
 
@@ -147,8 +152,8 @@ export function CameraRig() {
 
     // --- framed moments from the manifest -----------------------------------
     let inside: CameraDef | null = null
-    for (const def of world.manifest.cameras) {
-      if (insideTrigger(def.trigger, p)) {
+    for (const def of world.framedCameras ? world.manifest.cameras : []) {
+      if (insideTrigger(def.trigger, world.player.pos)) {
         inside = def
         break
       }

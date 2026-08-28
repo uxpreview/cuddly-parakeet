@@ -42,6 +42,15 @@ export const world = {
     // consumes it and resets its own velocity and mesh smoothing, which is why
     // it is a request rather than a direct write to `pos`.
     teleportTo: -1,
+    /**
+     * The height the boy is SEEN at, which is the art surface under his feet.
+     * Collision, triggers and progress stay on the grey-box blocks; only what
+     * the camera frames follows this. Where the two disagree most is the ford,
+     * whose bed is a metre below its collision slab so that the crossing is
+     * under water — and a camera that keeps the collision height there frames a
+     * metre of air above a boy who is wading.
+     */
+    visualY: 0,
   },
 
   dog: {
@@ -55,6 +64,7 @@ export const world = {
     bounceSeq: 0,
     lookAtPlayer: 0, // 0..1 blend the dog mesh uses to turn its head
     devSkipToNode: -1, // dev-only staging harness hook; -1 = inactive
+    devSkipOffset: 0, // metres past the node's start to land at
   },
 
   whistle: {
@@ -63,7 +73,17 @@ export const world = {
     pendingAnswerAt: 0, // 0 = none pending
     answerSeq: 0, // bumped when an answer fires; cue component watches this
     answerPos: new THREE.Vector3(),
+    // Bumped when a press is ACCEPTED. The boy plays the whistle gesture off
+    // this: with sound off, the press has to read on the boy himself, and a
+    // ring drawn on the ground under him is a UI element pretending not to be.
+    pressSeq: 0,
   },
+
+  // Manifest framed moments. The recording harness turns them off for a take
+  // whose beat happens to sit inside one: the near-miss node is INSIDE the
+  // town-reveal camera's trigger volume, which is correct staging for the
+  // chapter and makes the near-miss unwatchable as a recording of the dog.
+  framedCameras: true,
 
   triggers: [] as TriggerDef[],
   triggersEntered: new Set<string>(),

@@ -60,6 +60,21 @@ function angleLerp(a: number, b: number, t: number): number {
  * down and sweeps along the ground. He sits at every hazard-wait — story rule 2,
  * the most visible thing in the game — so it has to be a real pose.
  */
+/**
+ * The play-bow: forequarters down, elbows nearly on the ground, rear high, tail
+ * up and going. It is the least ambiguous thing a dog can do, and it is what
+ * the near-miss needs to READ as staged rather than as the game cheating: a dog
+ * who bows and then goes is playing, and story rule 4 says the chase is a game
+ * he is playing, in hindsight. Nothing about it is reactive — he bows at the
+ * authored approach distance and breaks away on the authored beat.
+ */
+const BOW = {
+  bodyPitch: 0.42, // chest down, croup up; the pivot is at the croup
+  drop: 0.05,
+  front: [0.62, 0.72, -0.55] as [number, number, number], // U, L, P offsets
+  rear: [-0.12, 0.1, 0.0] as [number, number, number],
+}
+
 const SIT = {
   bodyPitch: -0.52, // chest up, croup down; the body pivot is AT the croup
   drop: 0.135, // and the whole animal settles by this much onto his haunches
@@ -113,6 +128,7 @@ interface DogState {
   lbPicked: boolean
   lbCount: number
   lbVariant: number
+  trotLbCount: number
   lbDuration: number
   // near-miss
   escapeLookDone: boolean
@@ -127,6 +143,7 @@ interface DogState {
   // smoothed animation params
   look: number
   sit: number
+  bow: number
   headPitch: number
   animSpeed: number
   cmdSpeed: number
@@ -164,6 +181,7 @@ function makeState(): DogState {
     lbPicked: false,
     lbCount: 0,
     lbVariant: 0,
+    trotLbCount: 0,
     lbDuration: 0.9,
     escapeLookDone: false,
     nextGlanceAt: 3,
@@ -174,6 +192,7 @@ function makeState(): DogState {
     bounceEnd: -1,
     look: 0,
     sit: 0,
+    bow: 0,
     headPitch: 0,
     animSpeed: 0,
     cmdSpeed: 0,
@@ -265,6 +284,7 @@ export function Dog() {
     let lookTarget = 0
     let headPitchTarget = 0
     let sitTarget = 0
+    let bowTarget = 0
     let moveV = 0
     let turnRate = 9
     // Look-back staging, read by the rig below. Every look-back in the game —
@@ -302,6 +322,8 @@ export function Dog() {
       const idx = Math.min(world.dog.devSkipToNode, route.nodes.length - 1)
       world.dog.devSkipToNode = -1
       const rn = route.nodes[idx]
+      const off = world.dog.devSkipOffset
+      world.dog.devSkipOffset = 0
       st.nodeIndex = idx
       st.phase = 'main'
       st.nodeStart = st.clock
@@ -311,9 +333,12 @@ export function Dog() {
       st.sniffActive = false
       st.sniffPauseUntil = 0
       st.escapeLookDone = false
-      st.s = rn.s0
-      st.pos.copy(rn.points[0])
-      st.sniffPos.copy(rn.points[0])
+      st.s = Math.min(rn.s1, rn.s0 + off)
+      route.pointAt(st.s, _pos)
+      st.pos.copy(_pos)
+      st.sniffPos.copy(_pos)
+      route.directionAt(st.s, _dir)
+      st.heading = Math.atan2(_dir.x, _dir.z)
       st.meshY = null
       gait.reset(st.pos, st.heading, (x, z, y) => {
         const a = artGround(x, z)
@@ -502,9 +527,12 @@ export function Dog() {
           }
           // scheduled look-backs: one ~2 s after the node starts, then every 8-14 s
           if (st.clock >= st.nextLookBackAt && st.clock >= st.lookBackUntil) {
-            // A and B while he is moving; C belongs to a full stop.
-            st.lookBackVariant = st.lbCount % 2
-            st.lbCount++
+            // A and B while he is moving; C belongs to a full stop. Its own
+            // counter, because sharing the node's would mean a trot look-back
+            // silently advanced which variant the next NODE plays — and the
+            // whole point of the node's three is that they cycle in order.
+            st.lookBackVariant = st.trotLbCount % 2
+            st.trotLbCount++
             st.lookBackUntil = st.clock + LOOK_BACKS[st.lookBackVariant].duration
             st.nextLookBackAt = st.clock + 8 + rand() * 6
           }
@@ -567,7 +595,11 @@ export function Dog() {
             desiredHeading = toPlayerYaw
             if (st.phase === 'nm-beat') {
               lookTarget = 1 // the held beat, looking straight at the player
-              if (st.clock - st.phaseStart >= 1.1) {
+              // Down into the bow, hold it, and up again on the way out. The
+              // shape of the whole move is the invitation.
+              const t = (st.clock - st.phaseStart) / 1.9
+              bowTarget = t < 0.28 ? t / 0.28 : t < 0.76 ? 1 : Math.max(0, 1 - (t - 0.76) / 0.24)
+                if (st.clock - st.phaseStart >= 1.9) {
                 st.phase = 'nm-escape'
                 st.phaseStart = st.clock
                 st.escapeLookDone = false
@@ -618,6 +650,7 @@ export function Dog() {
     st.heading = angleLerp(st.heading, desiredHeading, 1 - Math.exp(-turnRate * dt))
     st.look += (lookTarget - st.look) * Math.min(1, dt * (lookTarget > st.look ? 10 : 3.5))
     st.sit += (sitTarget - st.sit) * Math.min(1, dt * 4)
+    st.bow += (bowTarget - st.bow) * Math.min(1, dt * 9)
     st.headPitch += (headPitchTarget - st.headPitch) * Math.min(1, dt * 6)
     if (moveV <= 0.001) st.cmdSpeed = Math.max(0, st.cmdSpeed - DECEL * dt)
     st.animSpeed += (moveV - st.animSpeed) * Math.min(1, dt * 9)
@@ -645,7 +678,7 @@ export function Dog() {
     }
 
     const frozen = activity === 'stare' // exit hold: rigid, tail still, head fixed
-    const sitting = st.sit > 0.02
+    const sitting = st.sit > 0.02 || st.bow > 0.02
 
     // The bark-bounce: two quick hops off the front, which is what a dog
     // actually does when he answers. It is cosmetic and never touches the route.
@@ -710,11 +743,11 @@ export function Dog() {
     const body = rig.joints.body
     body.position.set(
       bodyRest.pos.x,
-      bodyRest.pos.y - st.sit * SIT.drop + breathe,
+      bodyRest.pos.y - st.sit * SIT.drop - st.bow * BOW.drop + breathe,
       bodyRest.pos.z,
     )
     body.rotation.set(
-      bodyRest.rot.x + st.sit * SIT.bodyPitch + bounceReach * 0.5,
+      bodyRest.rot.x + st.sit * SIT.bodyPitch + st.bow * BOW.bodyPitch + bounceReach * 0.5,
       0,
       frozen ? 0 : Math.sin(gait.phase * Math.PI * 2) * 0.035 * speedN,
     )
@@ -738,20 +771,26 @@ export function Dog() {
       _q.setFromAxisAngle(AXIS_Y, heading).multiply(restP[i])
       setWorldQuaternion(P, _q)
 
-      if (st.sit > 0.001) {
-        // Sitting overrides the solve rather than blending against it: a folded
-        // hock is not a stretched one part of the way back.
+      // Sitting and bowing override the solve rather than blending against it:
+      // a folded hock is not a stretched one part of the way back.
+      for (const [amount, pose, pitch] of [
+        [st.sit, SIT, SIT.bodyPitch],
+        [st.bow, BOW, BOW.bodyPitch],
+      ] as const) {
+        if (amount <= 0.001) continue
         const front = leg[0] === 'f'
-        const set = front ? SIT.front : SIT.rear
+        const set = front ? pose.front : pose.rear
         const names = [leg + 'U', leg + 'L', leg + 'P']
         for (let k = 0; k < 3; k++) {
           const j = rig.joints[names[k]]
           const r = rig.rest[names[k]]
-          // front legs stand under a chest that has risen, so they take the
-          // body's pitch back out of themselves
-          const extra = front && k === 0 ? -st.sit * SIT.bodyPitch : 0
+          // the legs that are NOT carrying the pitch take it back out of
+          // themselves, so a sitting dog's forelegs stay vertical and a bowing
+          // dog's hind legs stay standing
+          const carries = pose === SIT ? !front : front
+          const extra = !carries && k === 0 ? -amount * pitch : 0
           _sitQ.setFromAxisAngle(AXIS_X, r.x + set[k] + extra)
-          j.quaternion.slerp(_sitQ, st.sit)
+          j.quaternion.slerp(_sitQ, amount)
         }
       }
     }
@@ -790,9 +829,9 @@ export function Dog() {
       amp = 0.42
       lift = -0.55
     } else if (activity === 'near-miss-hold') {
-      rate = st.phase === 'nm-beat' ? 13 : 8 // high and fast: this is play
-      amp = st.phase === 'nm-beat' ? 0.6 : 0.42
-      lift = 0.22
+      rate = st.phase === 'nm-beat' ? 14 : 8 // high and fast: this is play
+      amp = st.phase === 'nm-beat' ? 0.65 : 0.42
+      lift = 0.22 + st.bow * 0.5 // the bow carries it right up
     } else if (st.animSpeed > 0.4) {
       rate = 8.5 + speedN * 3
       amp = 0.3 + speedN * 0.12
@@ -842,6 +881,7 @@ export function Dog() {
       tailAmp: +st.tailAmp.toFixed(3),
       tailRate: +st.tailRate.toFixed(2),
       lbVariant: activity === 'look-back' ? st.lbVariant : -1,
+      bow: +st.bow.toFixed(3),
       speed: +st.animSpeed.toFixed(3),
       gaitPhase: +gait.phase.toFixed(4),
     }

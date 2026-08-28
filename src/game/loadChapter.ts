@@ -47,6 +47,7 @@ export async function loadChapter(id: string): Promise<void> {
 
   const [sx, sy, sz] = manifest.spawn.position
   world.player.pos.set(sx, sy, sz)
+  world.player.visualY = sy
   world.player.heading = (manifest.spawn.facing * Math.PI) / 180
   world.player.tracker = new ProgressTracker(world.route)
   world.dog.nodeIndex = 0

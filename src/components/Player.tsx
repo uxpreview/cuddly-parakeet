@@ -88,6 +88,9 @@ export function Player() {
     stillFor: 0,
     breath: 0,
     armPhase: 0,
+    // the whistle gesture: hand to mouth, head back, a beat, and down again
+    lastPressSeq: 0,
+    whistleAt: -100,
   }).current
 
   // Dev-only helpers: number keys teleport along the route, 0 toggles a x4
@@ -280,6 +283,7 @@ export function Player() {
     root.position.set(pos.x, 0, pos.z)
     root.rotation.y = heading
     rig.group.position.y = support - st.dip
+    world.player.visualY = support
     rig.group.updateMatrixWorld(true)
 
     const pelvis = rig.joints.pelvis
@@ -344,6 +348,32 @@ export function Player() {
     // pendulum, and a walking child's elbow is always a little bent.
     rig.joints.elbowL.rotation.x = -0.32 - Math.max(0, armSwing) * 0.55
     rig.joints.elbowR.rotation.x = -0.32 - Math.max(0, -armSwing) * 0.55
+
+    // --- the whistle, as a gesture -------------------------------------------
+    // With sound off the press has to read on the BOY. It used to be an
+    // expanding ring drawn on the ground under him, which is a marker on the
+    // player in screen grammar — the one thing game-design.md says the answer
+    // must never be. He puts a hand to his mouth, tips his head back and rises
+    // onto the balls of his feet, which is what a boy whistling looks like.
+    if (world.whistle.pressSeq !== st.lastPressSeq) {
+      st.lastPressSeq = world.whistle.pressSeq
+      st.whistleAt = st.breath
+    }
+    const wt = (st.breath - st.whistleAt) / 0.85
+    if (wt >= 0 && wt <= 1) {
+      // up fast, held, down slow: the shape of drawing breath and letting go
+      const k = wt < 0.22 ? wt / 0.22 : wt < 0.62 ? 1 : 1 - (wt - 0.62) / 0.38
+      const e = k * k * (3 - 2 * k)
+      rig.joints.shoulderR.rotation.set(
+        rest2.shoulderR.x - 1.15 * e,
+        0.35 * e,
+        rest2.shoulderR.z + 0.55 * e,
+      )
+      rig.joints.elbowR.rotation.x = -0.32 - 1.5 * e
+      head.rotation.x -= 0.34 * e
+      chest.rotation.x -= 0.16 * e
+      rig.group.position.y += 0.022 * e
+    }
 
     // Where the MESH's soles ended up, not where the plan put them. The plan
     // cannot slide by construction; the thing that CAN is a leg that could not

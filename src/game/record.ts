@@ -24,6 +24,8 @@ export interface RecProbe {
   dog: { pos: number[]; heading: number; activity: string; node: number; look: number }
   whistle: { lastAt: number; pendingAt: number; answerSeq: number }
   perf: { drawCalls: number; triangles: number }
+  /** The dog in SCREEN space: x, y, and his projected height in pixels. */
+  dogScreen: [number, number, number]
   /** Prints laid down since the last probe. */
   printsLaid?: { kind: string; x: number; y: number; z: number; heading: number }[]
   /** Filled by the character rigs; see src/art/rig.ts. */
@@ -43,6 +45,7 @@ export interface RecProbe {
     tailAmp: number
     tailRate: number
     lbVariant: number
+    bow: number
     speed: number
     gaitPhase: number
   }
@@ -67,6 +70,28 @@ const _fwd = new THREE.Vector3()
 const _right = new THREE.Vector3()
 const _target = new THREE.Vector3()
 const UP = new THREE.Vector3(0, 1, 0)
+
+/**
+ * Where the dog is on screen, and how big. The critic loop reads a contact
+ * sheet, and a dog twenty pixels tall in a 1280 px frame cannot be judged from
+ * one — so the harness crops a second sheet around him, and this is what tells
+ * it where to crop.
+ */
+const _sp = new THREE.Vector3()
+function dogOnScreen(): [number, number, number] {
+  const cam = (window as unknown as { __cam?: THREE.PerspectiveCamera }).__cam
+  if (!cam) return [0, 0, 0]
+  const w = window.innerWidth
+  const h = window.innerHeight
+  _sp.copy(world.dog.pos).project(cam)
+  const x = ((_sp.x + 1) / 2) * w
+  const y = ((1 - _sp.y) / 2) * h
+  _sp.copy(world.dog.pos)
+  _sp.y += 0.74
+  _sp.project(cam)
+  const top = ((1 - _sp.y) / 2) * h
+  return [Math.round(x), Math.round(y), Math.max(1, Math.round(y - top))]
+}
 
 export function installRecorder(seed: number): void {
   beginRecording(seed)
@@ -146,9 +171,20 @@ export function installRecorder(seed: number): void {
       world.player.teleportTo = Math.max(0, Math.min(r.total, s + offset))
     },
 
-    /** Jump the dog actor to a route node, so a beat can be staged directly. */
-    dogTo(n: number) {
+    /**
+     * Jump the dog actor to a route node, so a beat can be staged directly.
+     * `offset` moves him that many metres further along the route from the
+     * node's start, which is how a take opens with him already at reading size
+     * instead of thirty metres up the canyon.
+     */
+    dogTo(n: number, offset = 0) {
       world.dog.devSkipToNode = n
+      world.dog.devSkipOffset = offset
+    },
+
+    /** Turn the manifest's framed moments off for a take. */
+    framed(on: boolean) {
+      world.framedCameras = on
     },
 
     /** Arc length of the first node of a given index, for scripting. */
@@ -185,6 +221,7 @@ export function installRecorder(seed: number): void {
           answerSeq: world.whistle.answerSeq,
         },
         perf: { drawCalls: perfStats.drawCalls, triangles: perfStats.triangles },
+        dogScreen: dogOnScreen(),
         printsLaid: drainPrintLog(),
         ...recFrame,
       }

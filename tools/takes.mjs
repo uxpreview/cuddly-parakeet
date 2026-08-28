@@ -28,14 +28,13 @@ export const TAKES = [
     label: 'Walking, stopping, the whistle and its answer, trotting, look-backs',
     seconds: 15,
     fps: 30,
-    // The reel Gate 3 asks for. He walks, stops dead and settles, whistles, the
-    // answer arrives at the dog, and the dog trots on through a look-back node.
-    // He opens CLOSE — inside the catch distance — so the take gets the gait,
-    // the tail and the collar at reading size before the dog moves on ahead and
-    // the whistle has something to answer from a distance.
+    // The reel Gate 3 asks for, staged on the open bank below the first bend —
+    // river on one side, wall on the other, and enough room that the dog is at
+    // reading size for the whole take. He walks, stops dead and settles,
+    // whistles, the answer arrives at the dog, and the dog trots on.
     setup: [
-      ['dogTo', 3],
-      ['placeAtNode', 3, -9],
+      ['dogTo', 1, 52],
+      ['placeAtNode', 1, 40],
     ],
     at: [
       [0.0, 'steer', 'route', 5],
@@ -46,49 +45,72 @@ export const TAKES = [
   },
   {
     id: 'nearmiss',
-    label: 'The near-miss: the approach, the held beat, the break away',
-    seconds: 13,
+    label: 'The near-miss: the approach, the play-bow, the break away',
+    seconds: 16,
     fps: 30,
+    // The near-miss node sits INSIDE the town-reveal camera's trigger volume,
+    // which is right for the chapter — the reveal and the near-miss are the
+    // same beat — and makes the dog unwatchable in a recording that is about
+    // the dog. The framed moment is off for this take only.
     setup: [
+      ['framed', false],
       ['dogTo', 12],
-      ['placeAtNode', 12, -22],
+      ['placeAtNode', 12, -15],
     ],
     at: [[0.0, 'steer', 'dog']],
   },
   {
     id: 'lookbacks',
     label: 'The three look-back variants, back to back',
-    seconds: 12,
+    seconds: 13,
     fps: 30,
-    // The chapter stages one look-back node; the variants cycle. Re-entering
-    // the node is how all three get into one frame-comparable take.
-    setup: [
-      ['dogTo', 4],
-      ['placeAtNode', 4, -14],
-    ],
+    // The chapter stages one look-back node, on the gravel bar; the variants
+    // cycle. Re-entering the node is how all three get into one frame-comparable
+    // take.
+    // The dog enters the node at t=0, not in the setup: the harness settles for
+    // three quarters of a second before the clock starts, and variant A only
+    // lasts 0.85, so a look-back staged in the setup is over before frame 0.
+    setup: [['placeAtNode', 4, -11]],
+    // The BOY goes back with him. Re-entering the node alone leaves the dog
+    // standing where the boy has since walked to — a metre away by the third
+    // variant, which is both unreadable and a breach of story rule 4. Resetting
+    // the pair makes the take three clean repetitions of the same geometry,
+    // which is what "visibly different" has to be judged against.
     at: [
       [0.0, 'steer', 'route', 5],
-      [4.0, 'dogTo', 4],
-      [8.0, 'dogTo', 4],
+      [0.0, 'dogTo', 4],
+      [4.3, 'dogTo', 4],
+      [4.3, 'placeAtNode', 4, -11],
+      [8.6, 'dogTo', 4],
+      [8.6, 'placeAtNode', 4, -11],
     ],
   },
   {
     id: 'ford',
-    label: 'The hazard-wait at the ford: he is sitting there when the boy arrives',
-    seconds: 14,
+    label: 'The hazard-wait: he is sitting at the water when the boy arrives',
+    seconds: 15,
     fps: 30,
     setup: [
       ['dogTo', 2],
-      ['placeAtNode', 2, -17],
+      ['placeAtNode', 2, -19],
     ],
     at: [
       [0.0, 'steer', 'route', 5],
-      [9.0, 'whistle'],
+      [9.5, 'whistle'],
     ],
   },
 ]
 
+// The recording viewport. 960x540 for the critic loop, because the whole canyon
+// is 355k triangles through a software rasteriser and the frame cost is
+// fill-rate bound: at 1280x720 a fifteen-second take was ten minutes, which is
+// an hour a critic iteration and would have set the cap rather than the work
+// doing it. `WIDE=1` shoots the delivery set at 1280x720.
 export const VIEWPORTS = {
-  desktop: { width: 1280, height: 720, dsf: 1 },
-  portrait: { width: 390, height: 844, dsf: 2 },
+  desktop: process.env.WIDE
+    ? { width: 1280, height: 720, dsf: 1 }
+    : { width: 960, height: 540, dsf: 1 },
+  portrait: process.env.WIDE
+    ? { width: 390, height: 844, dsf: 2 }
+    : { width: 390, height: 844, dsf: 1 },
 }

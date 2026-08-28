@@ -423,3 +423,135 @@ lying across the chest with the skull perched on top of it rather than on the
 end of it. The dog is also stood on the ground from his own bounding box now,
 rather than from joint heights hand-tuned to a pose, after five centimetres of
 daylight under him in the judged set.
+
+---
+
+# Gate 3 rulings
+
+Made while building Gate 3. Each one is here because it changes something a
+later session would otherwise have to re-derive, and each one is a number that
+was measured rather than chosen.
+
+## D28 — The anatomy is authored once and consumed twice
+
+`buildBoy`/`buildDog` baked a pose into one merged geometry and were used only
+by the art bible; the gameplay actors drove Gate 1 grey boxes. Rebuilding the
+models a second time for the actors would have guaranteed the two drifted, and
+nothing would have caught it.
+
+**Ruling:** the anatomy lives in `src/art/rig.ts` as a joint list and a part
+list, and comes out two ways — `buildRig()` for a hierarchy the actors animate,
+`bakePose()` for the same parts flattened through a pose into one geometry and
+one draw call. The art bible and the recording are literally the same model.
+Anything that never moves keeps the merged path.
+
+The joint set is decided by the gait states and the node vocabulary, not by
+convenience: three segments a leg on both characters (a foot has to be plantable
+and the hock has to survive, per D27), the dog's neck separate from his head
+(a look-back bends the neck first, also D27), and a three-segment tail (tail
+language is a sweep travelling down it, which one rigid stick cannot do).
+
+## D29 — A foot is a world position, not a limb angle
+
+Gate 3 asks for a boy with weight, a settle, no foot sliding, and pawprints that
+match the gait. None of those is reachable by tuning a swing angle: rotating a
+rigid leg about the hip drags its contact point along the ground by whatever the
+arc happens to be.
+
+**Ruling:** `src/game/gait.ts` plans FOOTFALLS. A foot is put down at a world
+position, held while the body passes over it, and picked up again; the leg is
+solved to reach it. Three things follow, and all three are consequences rather
+than features:
+
+- Sliding is zero by construction. What remains is a leg that could not REACH
+  its plant, which is a different and measurable thing (`tools/dev/gait.mjs`).
+- The body's bob is not authored. `supportHeight()` drops the body as the stride
+  opens, because a leg at full stretch cannot also be a leg reaching forward,
+  and lets it back up as the foot passes underneath. Any bob added on top of
+  that is error: the dog carried an 18 mm sine and it lifted his paws off the
+  ground by exactly that much.
+- Every print in the game is spawned BY a plant, at that foot's position,
+  facing the way it was pointing. A print cannot disagree with the gait because
+  there is no other way for one to come into existence.
+
+Stride length is derived, not chosen: a foot on the ground travels `duty *
+stride` relative to its hip, so half of that is the reach a leg needs at
+touchdown, and a leg covers `sqrt(2 * reach * dip)` of it for a given hip drop.
+The boy's legs were 7 cm too short to take any step at all and are longer; he is
+1.17 m and 2.97 of his own heads, against the "three heads" the art direction
+asks for.
+
+## D30 — Pace is set by cadence, and cadence is set by the legs
+
+The boy walked at 1.6 m/s and the dog trotted at 2.6, both chosen at Gate 1
+against grey boxes with no gait in them. At the stride lengths their legs
+actually cover, that is 256 steps a minute for the boy and 4.2 stride cycles a
+second for the dog — neither of which is a walk or a trot at any size.
+
+**Ruling:** the boy walks at 1.15 m/s (0.75 m stride, 184 steps a minute) and
+the chapter's trot nodes run at 2.2 (0.62 m stride, 3.55 cycles a second).
+`game-design.md` names no number for either, and the doc-owned quantity moves
+the right way: chapter 1's 595 m of route is 8.6 minutes of walking against the
+~8 the story bible asks for, where 1.6 gave 6.2. Story rule 4 — trotting, never
+running — lives or dies on the dog's cadence, not on his speed.
+
+## D31 — The river's shoreline is found, not stated
+
+Water reaches were fractional cross-section RUNG indices. A rung index means a
+different place in a leg with a different profile, so the ford's bank-to-bank
+crossing was being drawn across its neighbour's rungs, where the same index is
+halfway up a cliff; and a shoreline pinned to a rung while the rung wanders with
+the bank jitter cuts a sawtooth into the bank.
+
+**Ruling:** the chapter states where there is water and how high it is, and
+nothing else. At each sample the engine walks the cross-section out from its
+lowest point until the ground rises through the water level, and that crossing
+IS the shoreline, smoothed over five samples so it curves rather than steps.
+Depth follows from the bed under it, and the three documented river values are
+chosen by depth rather than authored per reach — which is "depth told by hue"
+becoming automatic. `tools/dev/river.mjs` reports the width and depth per
+sample.
+
+## D32 — The ford reads as shade because the reach is opened, not because the sun moved
+
+The Gate 1 verdict asked whether the ford reading as underexposure was a light
+problem or a geometry one. Measured: samples 89 to 125 had **zero percent** of
+their walked floor in the key light — a 56 m unbroken shaded run, so there is no
+lit surface in the reach for an edge to be the edge of.
+
+**Ruling:** geometry. No side wall is to blame — at D20's sun the shadow falls
+almost straight down the canyon's own axis — so moving the sun would cost D20 its
+whole argument and buy a different frame, not a better one. The reach is opened
+instead, and only above the near terrace: a 7 m terrace 15 m out throws its
+shadow twelve metres and lands it on its own foot, while the 21 m rim above it
+throws thirty-six and buries the floor. 0% lit becomes 54%, with the terminator
+falling inside the reach. `tools/dev/fordlight.mjs` is the instrument.
+
+## D33 — The whistle's press reads on the boy; the answer reads on the world
+
+Gate 1 drew an expanding ring on the ground under the player for the press and
+another under the dog for the answer, plus six grey tetrahedra for the birds.
+A ring drawn under the player is a marker on the player in screen grammar, which
+is the one thing `game-design.md` says the answer must never be.
+
+**Ruling:** the press is a GESTURE — he stops, puts a hand to his mouth, tips his
+head back and rises a little. The answer is birds lifting and scattering from
+where he is, and a puff of dust off the ground he barked on. Both are world
+events at real positions, both fade, neither points. The birds are drawn in the
+documented pine value because a bird against a pale sky is a dark silhouette and
+that is all that survives at eighty metres; the dust is the documented path
+value it was lifted from. No new colour enters the chapter for this.
+
+## D34 — Gate 3 is judged from a deterministic recording
+
+`tools/shoot.mjs` takes stills and Gate 3 is about movement. A critic loop
+comparing two takes of a moving character needs those takes to differ only where
+the code differs.
+
+**Ruling:** `tools/record.mjs` owns the frameloop. `frameloop="never"`, a fixed
+timestep, a seeded clock and random stream (`src/game/clock.ts`), and a scripted
+input timeline (`tools/takes.mjs`). Same seed, same script, same pixels. It
+writes a WebM, a wide contact sheet, a second sheet cropped around the dog — at
+the distances this chapter stages him he is twenty pixels tall and no judgement
+about his gait can be made from the wide one — and the per-frame probe the
+numbers come out of. `?rec=` is dev-only, exactly like `?dev`.
