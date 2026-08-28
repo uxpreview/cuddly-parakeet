@@ -36,6 +36,9 @@ const CATCH_DIST = 12 // straight-line distance that counts as "caught up"
 const WAIT_ASIDE = 0.95
 /** And how fast he steps on and off that verge. A dog's sidestep, not a jump. */
 const ASIDE_RATE = 0.55
+/** The trot weave: amplitude in metres, and its wavelength in metres of route. */
+const WEAVE_AMP = 0.75
+const WEAVE_LEN = 5.2
 /**
  * How long his head stays home after a look-back before another may start.
  * Long enough that the return is visible as a return, at the sizes this chapter
@@ -381,6 +384,7 @@ export function Dog() {
     let turnRate = 9
     let holdSway = 0
     let asideTarget = 0
+    let weave = 0
     // Look-back staging, read by the rig below. Every look-back in the game —
     // the authored node and the ones the trot schedules for itself — comes out
     // of the same three variants, so the pattern reads as behaviour.
@@ -693,6 +697,19 @@ export function Dog() {
             bodyYawTarget = v.bodyYaw * shape
             lbPawLift = v.pawLift * shape
           }
+          // He does not trot down the exact centre of the path.
+          //
+          // A dog holding a ruler-straight line is wrong about the animal, and
+          // it is also what welds him to the boy in frame: the camera sits
+          // directly behind the boy on the same route, so a dog on the
+          // centreline is in the boy's own screen column at every distance, and
+          // measured across four takes the two came within 0 to 8 px of each
+          // other while the dog's body was 15 to 38 px. The weave is a function
+          // of ARC LENGTH, not of time, so it is the same weave on every replay
+          // and the prints it lays curve with it -- which is also the end of the
+          // trail reading as an evenly spaced dotted line ruled up the middle of
+          // the frame.
+          weave = Math.sin(st.s / WEAVE_LEN) * WEAVE_AMP
           sp = pace(sp)
           const ds = Math.min(sp * dt, Math.max(0, target - st.s)) // never backward
           st.s += ds
@@ -848,13 +865,15 @@ export function Dog() {
     if (Math.abs(st.aside) < 1e-4) {
       st.aside = 0
       st.asideSide = 0
-    } else {
+    }
+    const lateral = st.aside + weave
+    if (Math.abs(lateral) > 1e-4) {
       route.directionAt(st.s, _asideDir)
       _aside.set(_asideDir.z, 0, -_asideDir.x)
       if (_aside.lengthSq() > 1e-6) {
         _aside.normalize()
-        _pos.x += _aside.x * st.aside
-        _pos.z += _aside.z * st.aside
+        _pos.x += _aside.x * lateral
+        _pos.z += _aside.z * lateral
       }
     }
 

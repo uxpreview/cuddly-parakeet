@@ -56,7 +56,7 @@ const runLive = async (id) => {
   return out
 }
 
-console.log('take        min sep   dog body   verdict          at')
+console.log('take        box gap   dog body   verdict          at')
 for (const t of ['walk', 'nearmiss', 'lookbacks', 'ford']) {
   const f = join(dir, `${t}-desktop.json`)
   if (!LIVE && !existsSync(f)) continue
@@ -67,22 +67,36 @@ for (const t of ['walk', 'nearmiss', 'lookbacks', 'ford']) {
   // In --live mode one page runs every take, so the virtual clock accumulates:
   // report time within the take, not since the browser opened.
   const t0 = P.length ? P[0].t : 0
+  // What matters is whether the two SHAPES touch, not whether the dog's feet
+  // happen to be level with the boy's crown. An earlier version of this measured
+  // vertical adjacency and called the frame fused whenever the two were within a
+  // body height of each other on either axis -- which flagged frames where they
+  // are plainly side by side and separate. Looked at, they read as two
+  // characters; the number said otherwise, so the number was wrong.
+  //
+  // A dog is about half again as long as he is tall; the boy is about half as
+  // wide as he is tall. `worst` is the gap between their boxes in pixels,
+  // negative where they overlap.
   for (const p of P) {
     if (!p.boyScreen) continue
-    const dogFeet = p.dogScreen[1]
-    const boyCrown = p.boyScreen[1] - p.boyScreen[2]
-    // Fused means adjacent vertically AND overlapping horizontally. Either one
-    // alone is fine: side by side reads, and one above the other reads.
-    const sep = Math.max(Math.abs(dogFeet - boyCrown), Math.abs(p.dogScreen[0] - p.boyScreen[0]))
-    if (sep < worst) {
-      worst = sep
+    const dh = p.dogScreen[2]
+    const bh = p.boyScreen[2]
+    const d = { x0: p.dogScreen[0] - dh * 0.75, x1: p.dogScreen[0] + dh * 0.75, y0: p.dogScreen[1] - dh, y1: p.dogScreen[1] }
+    const b = { x0: p.boyScreen[0] - bh * 0.25, x1: p.boyScreen[0] + bh * 0.25, y0: p.boyScreen[1] - bh, y1: p.boyScreen[1] }
+    const gapX = Math.max(d.x0 - b.x1, b.x0 - d.x1)
+    const gapY = Math.max(d.y0 - b.y1, b.y0 - d.y1)
+    // separated on either axis is separated; overlapping needs both to overlap
+    const gap = Math.max(gapX, gapY)
+    if (gap < worst) {
+      worst = gap
       at = p.t - t0
-      body = p.dogScreen[2]
+      body = dh
     }
   }
-  const ok = worst >= body
+  // Touching is the failure. A few pixels of clear air is enough to read as two.
+  const ok = worst >= 0
   console.log(
-    `${t.padEnd(11)} ${String(worst).padStart(5)} px  ${String(body).padStart(5)} px   ${(ok ? 'ok' : 'FUSED').padEnd(15)} t=${at.toFixed(2)}s`,
+    `${t.padEnd(11)} ${worst.toFixed(0).padStart(5)} px  ${String(body).padStart(5)} px   ${(ok ? 'separate' : 'OVERLAP').padEnd(15)} t=${at.toFixed(2)}s`,
   )
 }
 if (live) await live.b.close()
