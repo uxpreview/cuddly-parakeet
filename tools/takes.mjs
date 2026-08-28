@@ -57,7 +57,15 @@ export const TAKES = [
   {
     id: 'nearmiss',
     label: 'The near-miss: the approach, the play-bow, the break away',
-    seconds: 20,
+    // 27, not 20. The critic read the escape as "dead straight and
+    // un-occluded" three iterations running -- 19.3 m of travel with 10 cm of
+    // lateral change -- and the reason is not that the staging is missing. The
+    // escape path is the descending switchbacks (tools/build-ch01.mjs: it runs
+    // from the near-miss node to the end of the route) and the bend is real;
+    // the take simply stopped before he reached it. game-design.md wants the
+    // fix to be staging rather than speed, and the staging was already there
+    // and off the end of the recording.
+    seconds: 27,
     fps: 30,
     // The near-miss node sits INSIDE the town-reveal camera's trigger volume,
     // which is right for the chapter — the reveal and the near-miss are the

@@ -247,7 +247,10 @@ export class Gait {
     // Chosen once a cycle and held — see `stride`.
     const wanted =
       this.spec.strideLen *
-      THREE.MathUtils.clamp(speed / this.spec.nominal, 0.42, 1.05)
+      // The ceiling is 1.3, not 1.05. Held at 1.05 an animal above his nominal
+      // pace could only go faster by moving his legs faster, never by reaching
+      // further -- which is what a scramble is. Real gaits lengthen first.
+      THREE.MathUtils.clamp(speed / this.spec.nominal, 0.42, 1.3)
     if (this.stride <= 0) this.stride = wanted
 
     // 0.3, not 0.12. A dog stopping to look back over his shoulder is capped

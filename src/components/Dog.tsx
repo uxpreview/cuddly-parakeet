@@ -6,7 +6,6 @@ import { rand } from '../game/clock'
 import { pushPrint } from '../game/trail'
 import { recFrame } from '../game/record'
 import { buildDogRig, dogRest, DOG_GAIT, DOG_LEGS } from '../art/characters'
-import { DOG } from '../art/palette'
 import { Gait, solveChain, setWorldQuaternion, type Chain } from '../game/gait'
 
 // The dog is an actor, not an AI. This component executes the authored node
@@ -34,11 +33,22 @@ const LEAD = 32 // target lead along the route, keeps him 20-45 m ahead
 const CATCH_DIST = 12 // straight-line distance that counts as "caught up"
 /** How far off the route line he waits, in metres. See `asideDir`. */
 const WAIT_ASIDE = 0.95
+/** How far off square a waiting dog sits, so he is seen in three-quarter. */
+const WAIT_QUARTER = 0.62
 /** And how fast he steps on and off that verge. A dog's sidestep, not a jump. */
 const ASIDE_RATE = 0.55
-/** The trot weave: amplitude in metres, and its wavelength in metres of route. */
+/**
+ * The trot weave: amplitude in metres, and its WAVELENGTH in metres of route.
+ *
+ * It has to be 2*pi*s/L, not s/L. Written as the latter the constant is a rate
+ * and not a wavelength, and 5.2 gave a period of 32.7 m: over the walk take's
+ * whole 26 m of dog route the cross-track deviation changed sign ONCE, which is
+ * a slow bow and not a weave. That is why the trail stayed a ribbon and the
+ * fusion barely moved.
+ */
 const WEAVE_AMP = 0.75
-const WEAVE_LEN = 5.2
+const WEAVE_LEN = 7.5
+const TAU = Math.PI * 2
 /** How fast the weave fades in and out at a node boundary, per second. */
 const WEAVE_EASE = 1.1
 /**
@@ -47,11 +57,16 @@ const WEAVE_EASE = 1.1
  * stages him. See the note at the refractory itself.
  */
 const LOOK_REFRACTORY = 1.25
-/** D21's floor, and the share of the dog it may never exceed. See the note at
- * `collarMat`: a floor in pixels is a growing fraction of a shrinking dog. */
-const COLLAR_FLOOR_PX = 4.0
-const COLLAR_STROKE_PX = 4.4
-const COLLAR_MAX_FRAC = 0.26
+// The collar's floor stays a FLOOR, in src/art/rig.ts, and nothing trims it.
+//
+// Iteration 3 capped it at 26% of the dog's on-screen height, because at 17 px
+// of dog a 7 px strap reads as a bib. That answered a judgement note by breaking
+// a banked requirement: measured after, the collar came back 5x4 px at 16 px of
+// dog, 4x4 at 15 and 4x3 at 14 -- under Gate 2's banked 5x5 across most of the
+// second half of the walk reel. D21 says outright that the cue outranks fidelity
+// at range, so when the two conflict the floor wins. A 5 px strap on a 15 px dog
+// IS a third of him; the answer is to stage him bigger, not to shrink the one
+// mark that finds him.
 
 const _pos = new THREE.Vector3()
 const _dir = new THREE.Vector3()
@@ -140,7 +155,10 @@ const SIT = {
   drop: 0.135, // and the whole animal settles by this much onto his haunches
   front: [0.52, -0.06, 0.0] as [number, number, number], // U, L, P offsets
   rear: [0.95, -0.62, 0.62] as [number, number, number],
-  tail: [1.05, -0.25, -0.2] as [number, number, number],
+  // Down, but not flat behind him: at 1.05 the first segment lay along the
+  // ground inside his own silhouette, which is where the wait's tail language
+  // went to die.
+  tail: [0.72, -0.2, -0.15] as [number, number, number],
 }
 
 /**
@@ -298,19 +316,6 @@ export function Dog() {
   const st = useRef(makeState()).current
 
   const rig = useMemo(() => buildDogRig(), [])
-  // The collar's pixel floor (D21) keeps it findable at range. But a floor in
-  // PIXELS is a growing FRACTION of a shrinking dog: at 17 px of dog the 4.4 px
-  // stroke made the strap 41% of his height, which reads as a bib and not as a
-  // collar, and Gate 2 banked "the collar is a strap". So the floor is also
-  // capped as a share of him. Both ends matter -- findable at thirty metres,
-  // still a strap at ten.
-  const collarMat = useMemo(
-    () =>
-      rig.materials.find(
-        (m) => (m as THREE.Material).name === DOG.collar.id,
-      ) as THREE.ShaderMaterial | undefined,
-    [rig],
-  )
   const rest = useMemo(() => dogRest(), [])
   const gait = useMemo(() => new Gait(DOG_GAIT), [])
   const chains = useMemo<Chain[]>(
@@ -339,7 +344,7 @@ export function Dog() {
     () => ({ pos: rig.joints.body.position.clone(), rot: rig.joints.body.rotation.clone() }),
     [rig],
   )
-  useFrame((state, delta) => {
+  useFrame((_, delta) => {
     const route = world.route
     if (!world.ready || !route) return
     const dt = Math.min(Math.max(delta, 0), 0.05)
@@ -582,7 +587,15 @@ export function Dog() {
           // bollard.
           holdSway = 0.7
           const waited = st.clock - st.nodeStart
-          desiredHeading = toPlayerYaw + Math.sin(waited * 0.41) * 0.075
+          // Three-quarter, not square.
+          //
+          // Facing the boy dead-on puts the dog's own body between the camera
+          // and everything the wait is supposed to show: measured, the tail
+          // could not be located in any frame across 1.6 s of the ford wait at
+          // 29-33 px of dog. Turned thirty-odd degrees he is still looking at
+          // the boy -- the head carries that -- and his tail, his legs and the
+          // ring of the collar all come out from behind him.
+          desiredHeading = toPlayerYaw + WAIT_QUARTER + Math.sin(waited * 0.41) * 0.075
           if (st.phase === 'main') {
             sitTarget = 1
             lookTarget = glance() ? 1 : 0.3
@@ -753,7 +766,13 @@ export function Dog() {
             // off the mark, eases as the gap opens, and gives it back whenever
             // he looks round. Peak is unchanged; the average is lower.
             const run = st.clock - st.phaseStart
-            let sp = run < 0.9 ? 1.9 + run * 1.0 : 2.8 - Math.min(0.75, (run - 0.9) * 0.24)
+            // Peak 2.45, not 2.8. MAX_SPEED is 3.2 and story rule 4 is
+            // "trotting, not running": at 2.9 m/s with a 0.65 m stride he was
+            // putting a foot down 4.5 times a second, which is a canter. The
+            // critic read it as bolting, and the measurement agrees -- the
+            // near-miss same-foot stride came back 50 cm against the walk
+            // take's 65, so he was going faster by taking SHORTER steps.
+            let sp = run < 0.9 ? 1.75 + run * 0.78 : 2.45 - Math.min(0.6, (run - 0.9) * 0.2)
             // and a slow breath in it, so no two seconds are the same speed
             sp += Math.sin(run * 1.15) * 0.22
             if (st.clock < st.lookBackUntil) {
@@ -842,7 +861,11 @@ export function Dog() {
     // So every look-back is followed by a refractory in which the head returns
     // to neutral and stays there. The whistle answer below is deliberately
     // exempt: an answer the player asked for must always reach the head.
-    if (lookTarget >= 0.9 && st.prevLookTarget < 0.9) st.lookRefractoryUntil = 0
+    // No self-cancel. This used to clear the refractory whenever a new
+    // look-back started, which is exactly the case it exists to prevent: in the
+    // take built to show look-backs they arrive 0.40-0.64 s apart, so every one
+    // of them cleared it and `look` still sat at or above 0.9 on four frames in
+    // five. A refractory a new event can cancel is not a refractory.
     if (st.prevLookTarget >= 0.9 && lookTarget < 0.9)
       st.lookRefractoryUntil = st.clock + LOOK_REFRACTORY
     st.prevLookTarget = lookTarget
@@ -882,7 +905,7 @@ export function Dog() {
     // and the gait instrument caught it within one recording of it landing.
     st.weaveMix += THREE.MathUtils.clamp(weave - st.weaveMix, -WEAVE_EASE * dt, WEAVE_EASE * dt)
     const lateral =
-      st.aside + Math.sin(st.s / WEAVE_LEN) * WEAVE_AMP * st.weaveMix
+      st.aside + Math.sin((TAU * st.s) / WEAVE_LEN) * WEAVE_AMP * st.weaveMix
     if (Math.abs(lateral) > 1e-4) {
       route.directionAt(st.s, _asideDir)
       _aside.set(_asideDir.z, 0, -_asideDir.x)
@@ -981,20 +1004,6 @@ export function Dog() {
     const g2 = holder.current
     if (!g2) return
     g2.visible = world.dog.visible
-
-    if (collarMat?.uniforms.uMinScreenPx) {
-      const cam = state.camera as THREE.PerspectiveCamera
-      const perPx = (2 * Math.tan((cam.fov * Math.PI) / 360)) / Math.max(state.size.height, 1)
-      const dogPx = 0.74 / Math.max(st.pos.distanceTo(cam.position), 0.01) / perPx
-      collarMat.uniforms.uMinScreenPx.value = Math.min(
-        COLLAR_FLOOR_PX,
-        dogPx * COLLAR_MAX_FRAC * 0.5,
-      )
-      collarMat.uniforms.uMinScreenWidthPx.value = Math.min(
-        COLLAR_STROKE_PX,
-        dogPx * COLLAR_MAX_FRAC,
-      )
-    }
 
     // The body rides the planted feet, so a trot over broken ground rises and
     // falls with what he is standing on rather than with a terrain sample.
@@ -1126,7 +1135,7 @@ export function Dog() {
       // exists only in frequency is a difference nobody sees.
       rate = 2.4
       amp = 0.66
-      lift = -0.55
+      lift = -0.28
     } else if (activity === 'near-miss-hold') {
       rate = st.phase === 'nm-beat' ? 14 : 8 // high and fast: this is play
       amp = st.phase === 'nm-beat' ? 0.65 : 0.42

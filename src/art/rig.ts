@@ -393,7 +393,14 @@ export const DOG_JOINTS = {
   neckLen: 0.19,
   neckTilt: 0.56, // radians from vertical, leaning forward
   tailBase: [0, 0.428, -0.196] as [number, number, number],
-  tailSeg: 0.06,
+  // 0.085, not 0.06. Three segments made a 0.18 m tail on a 0.70 m dog -- 26%
+  // of his height, about eight pixels at the ranges this chapter stages him,
+  // four of them thick. art-direction.md asks for "tail with real language" and
+  // the Gate 3 must-confirm is that the language READS; measured across two
+  // iterations the critic could not locate the tail at all at 29-35 px, in
+  // either the trot or the hazard-wait. A real dog's tail is nearer 40% of his
+  // height, so this is more accurate as well as more visible.
+  tailSeg: 0.085,
   tailUp: 0.85, // carried at the croup, a hand above the topline
   tailBend: -0.16, // one gentle arc, not an S: the angle only ever falls
   frontAt: [0.093, 0.372, 0.112] as [number, number, number],
@@ -657,7 +664,7 @@ export function dogRigDef(): RigDef {
   // white point on the tip. Three segments, so a sweep travels down it instead
   // of the whole thing waving as one stick.
   for (let i = 0; i < 3; i++) {
-    const r = 0.048 * (1 - (i / 3) * 0.3)
+    const r = 0.054 * (1 - (i / 3) * 0.3)
     const seg = capsule(r, D.tailSeg * 0.75, 2, 6)
     add('tail' + (i + 1), paint(place(seg, [0, D.tailSeg / 2, 0]), i === 2 ? pts : coat, S))
   }

@@ -26,7 +26,7 @@ import { consumeWhistleRequest } from '../game/input'
 import { world } from '../game/world'
 import { now, rand } from '../game/clock'
 import { recFrame } from '../game/record'
-import { CH1 } from '../art/palette'
+import { BOY, CH1 } from '../art/palette'
 
 export function WhistleSystem() {
   useFrame(() => {
@@ -56,7 +56,7 @@ export function WhistleSystem() {
 // WhistleCues — birds and dust, at the dog's position
 
 const MAX_CUES = 3
-const BIRDS_PER_CUE = 7
+const BIRDS_PER_CUE = 5
 const CUE_MS = 2600
 const PUFFS_PER_CUE = 4
 /** Wingtip to wingtip, metres. See birdGeometry(): S is the half-span. */
@@ -68,14 +68,14 @@ const BIRD_SPAN = 0.84
  * at thirty metres a real bird is four pixels. Four pixels of anything is dirt
  * on the lens. Up close the factor is exactly 1.
  */
-const BIRD_MIN_PX = 13
+const BIRD_MIN_PX = 10
 /**
  * And never wider than the dog they are answering for. Birds bigger than the
  * animal, hovering dead centre above his exact position, are not a correlate --
  * they are a marker, which is the one thing game-design.md says the answer must
  * never be. Measured, the floor put 28-40 px of bird above a 26-28 px dog.
  */
-const BIRD_MAX_FRAC = 0.8
+const BIRD_MAX_FRAC = 0.6
 
 const _wp = new THREE.Vector3()
 const _dp = new THREE.Vector3()
@@ -248,20 +248,25 @@ export function WhistleCues() {
   // off the path, semi-transparent, same hue and same value: it could not be
   // seen and never could have been.
   //
-  // A silhouette is a value contrast or it is nothing -- but it is also not a
-  // licence to put the darkest marks in the chapter into the sky. Boy-hair brown
-  // measured 71-80 L against a ground median of 225, tied with the boy's own
-  // hair for the darkest thing in frame, seven times over, in a chapter briefed
-  // as cool, clean and hopeful whose darkest values are supposed to belong to
-  // Chapter 3. Deadwood is 124 L: still a hundred below the sky it is seen
-  // against, so it reads as a silhouette, without becoming the subject.
+  // A silhouette needs value contrast AND a hue the background does not own.
+  //
+  // Two attempts got one of those at a time. Pine (102 L) was fired at a pine
+  // treeline. Boy-hair (64 L) fixed the hue and became the darkest mark in a
+  // chapter briefed as cool and hopeful. Deadwood (125 L) fixed the value and
+  // turned out to be `trunkHex` in artTerrain.ts -- the pine TRUNKS the birds
+  // fly against, which is the first failure again under a different constant:
+  // measured at the far answer, exactly one bird of seven was separable.
+  //
+  // The boy's shorts are 98 L, a warm brown that appears nowhere in the terrain
+  // -- the canopy is green and the trunks are grey-brown -- and sit 125 L below
+  // the sky. Value against the sky, hue against the canopy.
   const mats = useMemo(
     () => ({
       bird: Array.from(
         { length: MAX_CUES },
         () =>
           new THREE.MeshBasicMaterial({
-            color: CH1.deadwood.hex,
+            color: BOY.shorts.hex,
             transparent: true,
             opacity: 0,
             depthWrite: false,
