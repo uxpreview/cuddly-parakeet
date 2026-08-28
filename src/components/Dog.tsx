@@ -31,6 +31,8 @@ const ACCEL = 3.4 // m/s^2
 const DECEL = 5.0 // m/s^2
 const LEAD = 32 // target lead along the route, keeps him 20-45 m ahead
 const CATCH_DIST = 12 // straight-line distance that counts as "caught up"
+/** How far off the route line he waits, in metres. See `waitOffset`. */
+const WAIT_ASIDE = 0.95
 
 const _pos = new THREE.Vector3()
 const _dir = new THREE.Vector3()
@@ -39,6 +41,38 @@ const _foot = new THREE.Vector3()
 const _q = new THREE.Quaternion()
 const _fwdWorld = new THREE.Vector3()
 const _sitQ = new THREE.Quaternion()
+const _aside = new THREE.Vector3()
+const _asideDir = new THREE.Vector3()
+
+/**
+ * Put a waiting dog `aside` metres off the route line, on whichever side has
+ * ground under it. Chapters 2 to 4 are manifests, so this has to work from the
+ * route alone rather than from a hand-placed position per hazard.
+ */
+function waitOffset(
+  route: NonNullable<typeof world.route>,
+  s: number,
+  aside: number,
+  out: THREE.Vector3,
+): void {
+  route.pointAt(s, out)
+  route.directionAt(s, _asideDir)
+  // right of travel, on the ground plane
+  _aside.set(_asideDir.z, 0, -_asideDir.x)
+  if (_aside.lengthSq() < 1e-6) return
+  _aside.normalize()
+  for (const side of [1, -1]) {
+    const x = out.x + _aside.x * aside * side
+    const z = out.z + _aside.z * aside * side
+    const ag = artGround(x, z)
+    const ok = ag !== null || sampleGround(x, z, out.y + 0.75)?.walkable
+    if (ok) {
+      out.x = x
+      out.z = z
+      return
+    }
+  }
+}
 const AXIS_X = new THREE.Vector3(1, 0, 0)
 const AXIS_Y = new THREE.Vector3(0, 1, 0)
 
@@ -73,6 +107,17 @@ const BOW = {
   drop: 0.05,
   front: [0.62, 0.72, -0.55] as [number, number, number], // U, L, P offsets
   rear: [-0.12, 0.1, 0.0] as [number, number, number],
+  // The neck comes back UP out of the bow, and further than the body went down.
+  //
+  // This is not a flourish. A play bow is chest down and eyes ON you — a dog
+  // who drops his head as well is a dog eating. And the body pitch alone
+  // carried the neck over far enough that the collar tucked under his own back
+  // from a camera 18 degrees above: the red audit found ZERO red pixels for
+  // 0.93 s across the payoff beat of the near-miss, which is the one moment
+  // that has to read. Net of the body, the neck ends up 0.18 rad above rest,
+  // which opens the ring toward the camera instead of closing it.
+  neckLift: -0.6,
+  headLift: -0.28,
 }
 
 const SIT = {
@@ -88,16 +133,31 @@ const SIT = {
  * than three timings of the same move. Gate 3 asks for three that read apart in
  * a single recording, so they differ in the body, not only in the head.
  */
+//
+// At the size this chapter stages him -- eleven to twenty-five pixels tall --
+// pose DETAIL does not survive; only silhouette and motion do. The first pass
+// separated the three by degree along one axis (body yaw 0 / 0.34 / 0.95) and
+// A and B came back indistinguishable: 0.34 rad of hip yaw and a 5.5 cm paw on
+// a 25 px dog is one to two pixels. So they are separated by what the LEGS are
+// doing, which reads at any size, and only then by pose:
+//
+//   A  keeps trotting        head over the shoulder, nothing else changes
+//   B  stops, paw up         gathered and lowered, deciding whether to wait
+//   C  stops, turns, wags    square to the boy, tail high: an invitation
+//
+// `speed` is the cap in m/s while the variant runs, and it is the difference
+// that carries.
 const LOOK_BACKS = [
   // A — the glance. Head and neck only, over the shoulder, without breaking
   // stride. The cheapest and by far the most frequent.
-  { duration: 0.85, neck: 0.42, head: 0.66, bodyYaw: 0, pitch: 0.06, tailRate: 7, tailAmp: 0.34, pawLift: 0 },
-  // B — the check. He swings his hindquarters round under the turn and lifts a
-  // forepaw, which is the shape a dog makes when he is deciding whether to wait.
-  { duration: 1.15, neck: 0.55, head: 0.72, bodyYaw: 0.34, pitch: -0.02, tailRate: 5, tailAmp: 0.5, pawLift: 0.055 },
+  { duration: 0.85, neck: 0.42, head: 0.66, bodyYaw: 0, pitch: 0.06, tailRate: 7, tailAmp: 0.34, pawLift: 0, speed: 1.2 },
+  // B — the check. He pulls up, swings his hindquarters round under the turn,
+  // drops his head and holds a forepaw off the ground: the shape a dog makes
+  // when he is deciding whether to wait for you. The stop is the read.
+  { duration: 1.15, neck: 0.58, head: 0.74, bodyYaw: 0.62, pitch: 0.26, tailRate: 4, tailAmp: 0.45, pawLift: 0.13, speed: 0.18 },
   // C — the stop. Full quarter-turn back toward the boy, head level, tail
   // sweeping hard and high, held long enough to be an invitation.
-  { duration: 1.6, neck: 0.7, head: 0.85, bodyYaw: 0.95, pitch: 0.14, tailRate: 11, tailAmp: 0.62, pawLift: 0 },
+  { duration: 1.6, neck: 0.7, head: 0.85, bodyYaw: 0.95, pitch: 0.14, tailRate: 11, tailAmp: 0.62, pawLift: 0, speed: 0.15 },
 ]
 
 type NodePhase = 'main' | 'exit-turn' | 'exit-hold' | 'release' | 'nm-beat' | 'nm-escape'
@@ -131,7 +191,7 @@ interface DogState {
   trotLbCount: number
   lbDuration: number
   // near-miss
-  escapeLookDone: boolean
+  escapeNextLookAt: number
   // idle glances at the player
   nextGlanceAt: number
   glanceUntil: number
@@ -183,7 +243,7 @@ function makeState(): DogState {
     lbVariant: 0,
     trotLbCount: 0,
     lbDuration: 0.9,
-    escapeLookDone: false,
+    escapeNextLookAt: 0,
     nextGlanceAt: 3,
     glanceUntil: -1,
     lastBounceSeq: 0,
@@ -267,8 +327,8 @@ export function Dog() {
       let kind: 'full' | 'flick' | 'subtle'
       if (a === 'stare' || a === 'near-miss-escape' || (a === 'near-miss-hold' && st.phase === 'nm-beat')) {
         kind = 'subtle' // the staging owns these beats; only a small head-flick
-      } else if (a === 'trot' || a === 'look-back') {
-        kind = 'flick' // head-flick toward the player without stopping
+      } else if (a === 'look-back') {
+        kind = 'flick' // already turned toward the player; only the head snaps
       } else {
         kind = 'full' // bark-bounce: two quick hops, head snapped to the player
       }
@@ -287,6 +347,7 @@ export function Dog() {
     let bowTarget = 0
     let moveV = 0
     let turnRate = 9
+    let holdSway = 0
     // Look-back staging, read by the rig below. Every look-back in the game —
     // the authored node and the ones the trot schedules for itself — comes out
     // of the same three variants, so the pattern reads as behaviour.
@@ -332,7 +393,7 @@ export function Dog() {
       st.lbPicked = false
       st.sniffActive = false
       st.sniffPauseUntil = 0
-      st.escapeLookDone = false
+      st.escapeNextLookAt = 0
       st.s = Math.min(rn.s1, rn.s0 + off)
       route.pointAt(st.s, _pos)
       st.pos.copy(_pos)
@@ -459,7 +520,16 @@ export function Dog() {
           // facing back toward the boy, and does not move until the boy is
           // through the safety trigger.
           activity = 'hazard-wait'
-          _pos.copy(rn.points[0])
+          // Beside the path, not on it.
+          //
+          // Sitting exactly on rn.points[0] puts him on the line the boy is
+          // walking, so the boy arrives THROUGH him: measured at the ford, the
+          // dog's paws at screen y=270 and the boy's crown at y=269, the two of
+          // them fused into one shape. That is the same mis-staging Gate 2
+          // handed forward from the hero shot, reproduced by the actor rather
+          // than by a camera. It is also wrong about the animal -- a dog waiting
+          // at water waits at the edge of it.
+          waitOffset(route, rn.s0, WAIT_ASIDE, _pos)
           desiredHeading = toPlayerYaw
           if (st.phase === 'main') {
             sitTarget = 1
@@ -539,11 +609,23 @@ export function Dog() {
           }
           let sp = cap
           if (st.clock < st.gentleUntil) sp = Math.min(sp, 2.2)
+          // The answer is a BODY event, not a head flick.
+          //
+          // story.md gives Chapter 1 answers that are "clean, close and
+          // honest", and game-design.md requires a visual correlate legible
+          // with sound off. A 0.45 s head yaw on a dog fifteen pixels tall is
+          // about two pixels of change: measured, the whole on-screen answer
+          // was the birds and nothing else. He stops, turns his head all the
+          // way back and barks it. That is the direction the answer is supposed
+          // to give, and it is the one moment in a trot node where the gap
+          // closes instead of opening.
+          if (bouncing && st.bounceKind === 'full') sp = Math.min(sp, 0.12)
           if (st.clock < st.lookBackUntil) {
             const v = LOOK_BACKS[st.lookBackVariant]
-            // He slows to look, and variant C stops him outright: a dog does not
-            // check over his shoulder at full trot.
-            sp = Math.min(sp, st.lookBackVariant === 2 ? 0.15 : 1.2)
+            // Each variant carries its own cap: A keeps trotting, B and C pull
+            // up. A dog does not check over his shoulder at full trot, and at
+            // this range the stop is the only part of B that reads.
+            sp = Math.min(sp, v.speed)
             lookTarget = 1
             const left = st.lookBackUntil - st.clock
             const shape = Math.sin(Math.PI * THREE.MathUtils.clamp(1 - left / v.duration, 0, 1))
@@ -573,13 +655,28 @@ export function Dog() {
           // gives them a generous beat, then breaks away along the escape.
           if (st.phase === 'nm-escape') {
             activity = 'near-miss-escape'
-            if (!st.escapeLookDone && st.s - rn.s0 >= 16) {
-              st.escapeLookDone = true
-              st.lookBackUntil = st.clock + 0.7 // moving look-back mid-escape
+            // He looks back THROUGHOUT the escape, not once in the middle of
+            // it. Rule 3 of the dog is that he looks back constantly, and the
+            // first pass ran six unbroken seconds without a single one --
+            // exactly the stretch where the player most needs to be told he is
+            // playing rather than fleeing.
+            if (st.clock >= st.escapeNextLookAt && st.clock >= st.lookBackUntil) {
+              st.escapeNextLookAt = st.clock + 2.2 + rand() * 1.4
+              st.lookBackUntil = st.clock + 0.7
             }
-            let sp = 2.8
+            // A break-away is not a treadmill. `sp = 2.8` held flat to three
+            // digits for ten seconds in a straight open corridor is what makes
+            // an escape read as the game cheating rather than as a dog playing,
+            // and game-design.md is explicit that the fix for that is staging
+            // and timing, never speed. So the speed has a SHAPE: he goes hard
+            // off the mark, eases as the gap opens, and gives it back whenever
+            // he looks round. Peak is unchanged; the average is lower.
+            const run = st.clock - st.phaseStart
+            let sp = run < 0.9 ? 1.9 + run * 1.0 : 2.8 - Math.min(0.75, (run - 0.9) * 0.24)
+            // and a slow breath in it, so no two seconds are the same speed
+            sp += Math.sin(run * 1.15) * 0.22
             if (st.clock < st.lookBackUntil) {
-              sp = 1.6
+              sp = Math.min(sp, 1.45)
               lookTarget = 1
             }
             sp = pace(sp)
@@ -592,18 +689,34 @@ export function Dog() {
             if (st.s >= rn.s1 - 1e-3) advance()
           } else {
             activity = 'near-miss-hold'
+            // He waits, he does not freeze. The first pass copied him onto
+            // rn.points[0] every frame with look pinned at 0.600 and the tail
+            // at one rate for 3.6 s: speed 0.000 to three decimals, no weight
+            // shift, no head drift, a statue with a wagging tail. A dog holding
+            // a bow-tease shifts his weight and swings his head across you.
+            //
+            // Small on purpose. This is an authored hold, not an idle system:
+            // eight centimetres of sway and a slow head drift, both derived
+            // from his own clock so the take stays deterministic.
+            // The sway rides the BODY over his planted feet, not the route
+            // position: shifting the root would drag four fixed paws across the
+            // ground and buy the idle back in foot-slide. See `holdSway` below.
+            const held = st.clock - st.phaseStart
             _pos.copy(rn.points[0])
-            desiredHeading = toPlayerYaw
+            holdSway = 1
+            desiredHeading = toPlayerYaw + Math.sin(held * 0.47) * 0.09
             if (st.phase === 'nm-beat') {
               lookTarget = 1 // the held beat, looking straight at the player
               // Down into the bow, hold it, and up again on the way out. The
               // shape of the whole move is the invitation.
               const t = (st.clock - st.phaseStart) / 1.9
               bowTarget = t < 0.28 ? t / 0.28 : t < 0.76 ? 1 : Math.max(0, 1 - (t - 0.76) / 0.24)
-                if (st.clock - st.phaseStart >= 1.9) {
+              if (st.clock - st.phaseStart >= 1.9) {
                 st.phase = 'nm-escape'
                 st.phaseStart = st.clock
-                st.escapeLookDone = false
+                // He breaks away first and looks round after: a dog who checks
+                // over his shoulder before he has moved is not breaking away.
+                st.escapeNextLookAt = st.clock + 1.2
               }
             } else {
               lookTarget = 0.6
@@ -709,8 +822,20 @@ export function Dog() {
       frozen || sitting,
     )
     if (!sitting && !frozen) {
-      for (const f of gait.feet) {
-        if (f.justPlanted) pushPrint('dog', f.pos.x, f.pos.y, f.pos.z, f.heading)
+      // The FORE feet only. A trotting dog direct-registers: the hind foot lands
+      // in the print the fore foot just made, so a trot track is two visible
+      // prints per stride cycle, not four.
+      //
+      // Laying all four put 212 prints down in 15.8 s at a 26.9 cm median gap,
+      // which renders as an unbroken serrated ribbon running the full depth of
+      // frame -- a drawn route line. Tracking IS the navigation system here, but
+      // a solid dotted line laid on the ground is waypoint grammar, and
+      // quality-bar.md bans that outright. Registering them halves the count and
+      // is what the animal actually does.
+      for (let i = 0; i < gait.feet.length; i++) {
+        const f = gait.feet[i]
+        if (f.justPlanted && DOG_LEGS[i][0] === 'f')
+          pushPrint('dog', f.pos.x, f.pos.y, f.pos.z, f.heading)
       }
     }
 
@@ -750,10 +875,17 @@ export function Dog() {
       bodyRest.pos.y - st.sit * SIT.drop - st.bow * BOW.drop + breathe,
       bodyRest.pos.z,
     )
+    // The weight shift of a dog standing and waiting: his mass moves across his
+    // feet, which is a body roll and a small lateral offset, not a step.
+    const swayT = st.clock * 0.85
+    const sway = holdSway * 0.055
+    body.position.x += Math.sin(swayT) * sway
+    body.position.z += Math.sin(swayT * 0.72 + 1.9) * sway * 0.7
     body.rotation.set(
       bodyRest.rot.x + st.sit * SIT.bodyPitch + st.bow * BOW.bodyPitch + bounceReach * 0.5,
       0,
-      frozen ? 0 : Math.sin(gait.phase * Math.PI * 2) * 0.035 * speedN,
+      (frozen ? 0 : Math.sin(gait.phase * Math.PI * 2) * 0.035 * speedN) +
+        Math.sin(swayT) * holdSway * 0.06,
     )
     rig.group.updateMatrixWorld(true)
 
@@ -807,12 +939,16 @@ export function Dog() {
     const neck = rig.joints.neck
     const head = rig.joints.head
     neck.rotation.set(
-      rig.rest.neck.x + st.sit * -0.16 + st.headPitch * 0.45,
+      rig.rest.neck.x + st.sit * -0.16 + st.bow * BOW.neckLift + st.headPitch * 0.45,
       rig.rest.neck.y + rel * st.look * neckShare,
       0,
     )
     head.rotation.set(
-      rig.rest.head.x + st.headPitch * (1 - st.look) + lbPitch * st.look - bounceReach * 0.8,
+      rig.rest.head.x +
+        st.bow * BOW.headLift +
+        st.headPitch * (1 - st.look) +
+        lbPitch * st.look -
+        bounceReach * 0.8,
       rig.rest.head.y + rel * st.look * (1 - neckShare),
       0,
     )

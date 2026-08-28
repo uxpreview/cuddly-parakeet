@@ -700,17 +700,35 @@ export function buildCollar(): THREE.Mesh {
     shadeDrop: 0.94,
     flatten: 0.82,
     occlusion: 0,
-    // The band never projects smaller than this. Two and a half pixels of
-    // radius is five pixels across, which is the smallest thing that survives
-    // the sampler as a coloured mark rather than as a tint on one grey pixel.
-    // It costs nothing up close, where the factor is exactly 1. D21.
-    minScreenRadiusPx: 2.5,
+    // The band never projects smaller than this. It costs nothing up close,
+    // where the factor is exactly 1. D21.
+    //
+    // 4.0, not 2.5. Gate 3 stages the dog at 24-29 m, half again as far as any
+    // art-bible viewpoint, and 2.5 px of radius does not survive there. The
+    // ring is DRAWN at the floor, but only its core clears the audit's
+    // saturation threshold and the antialiased edge is lost: at 2.5 the mark
+    // measured 3x2 px at 17.8 m, 1 px at 24 m, and strobed on and off frame to
+    // frame for the last five seconds of the Gate 3 reel. A cue that blinks is
+    // worse than a small one. So the floor covers the edge it loses, not just
+    // the core it keeps.
+    //
+    // Measured through the game's own camera at 960x540 (tools/dev/collarrange.mjs):
+    //
+    //     3.1 m  12x10 px  68%      17.6 m  5x4  67%
+    //     5.1 m  10x8      66%      21.6 m  5x4  67%
+    //     8.4 m   7x5      69%      26.6 m  5x5  63%
+    //    13.5 m   6x5      65%      31.6 m  5x6  66%
+    //                              35.9 m  6x7  65%
+    //
+    // Never under five pixels wide, never zero, never fewer than sixteen red
+    // pixels, against a banked floor of 5x5 at 21% saturation.
+    minScreenRadiusPx: 4.0,
     minScreenCenter: at,
     // The band's own axis, so the strap keeps a readable STROKE at range as
     // well as a readable radius. Taken through exactly the transforms the
     // geometry took: an approximation here shears the ring.
     minScreenAxis: [axis.x, axis.y, axis.z],
-    // 1.8, not 1.1. The band's radius floor holds its width across the frame,
+    // 4.4, not 1.8. The band's radius floor holds its width across the frame,
     // but a ring seen from behind and above — which is the angle the game shows
     // most — projects as an ellipse whose SHORT axis is the one the radius
     // floor does not defend. Measured at trail distance the collar came back
@@ -718,7 +736,12 @@ export function buildCollar(): THREE.Mesh {
     // dog was four metres from the camera. Thickening the strap along its own
     // axis is what puts the short axis back, and up close the factor is still
     // exactly 1.
-    minScreenWidthPx: 1.8,
+    //
+    // The short axis is the one that fails first, and it fails everywhere, not
+    // only at range: from an 18-degree camera the ring projects as an ellipse
+    // whose height is mostly stroke. Raising the radius floor alone left the
+    // band 3 px tall through the whole 15-20 m band. This is what fixed it.
+    minScreenWidthPx: 4.4,
     side: THREE.DoubleSide,
   })
   mat.name = DOG.collar.id
@@ -754,8 +777,20 @@ export const BOY_GAIT = {
   lift: 0.055,
   /** Read by the actor when it turns a sole position into an IK target. */
   ankleLift: 0.04,
-  /** The furthest the hip may fall below full leg extension. */
-  maxDip: 0.12,
+  /**
+   * The furthest the hip may fall below full leg extension.
+   *
+   * 0.055, not 0.12. A boy's legs are exactly as long as his hip is high --
+   * measured, standing slack 0.0000 m -- which is correct anatomy and means the
+   * support solve is ALWAYS working against full extension. Every stance width
+   * therefore asks the body down, and the budget here is what stops that
+   * becoming a squat. At 0.12 the stop was spending its whole 0.8 s of closing
+   * step 120 mm into the ground and then popping back out, which is a curtsey
+   * at the end of every walk and a camera jolt inside the settle beat. At 0.055
+   * the mid-stride bob is untouched (it asks for 44 mm) and the stop's dip is
+   * a dip.
+   */
+  maxDip: 0.055,
   track: 0,
 }
 

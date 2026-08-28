@@ -23,6 +23,33 @@ const _q2 = new THREE.Quaternion()
 const _knee = new THREE.Vector3()
 const DOWN = new THREE.Vector3(0, -1, 0)
 
+/**
+ * Where in a foot's swing it starts to count toward the body's support height,
+ * and how much slack it carries when it does. See `supportHeight`: the slack
+ * goes from LAND_SLACK to zero across the window, so a landing foot joins the
+ * solve continuously instead of arriving at full weight in one frame. Half a
+ * metre is far more than any real difference between two feet, so a foot at the
+ * start of the window can never be the binding one.
+ */
+const LAND_FROM = 0.72
+const LAND_SLACK = 0.5
+
+/**
+ * How fast the body's support height may move, in metres per second. Rising is
+ * muscular and slow; falling is mostly gravity. See the note in supportHeight.
+ */
+const SUPPORT_RISE = 0.5
+const SUPPORT_FALL = 0.85
+
+/** Scratch for supportHeight, which runs every frame for both characters. */
+const _allow = [0, 0, 0, 0]
+const _footY = [0, 0, 0, 0]
+
+const smoothstep = (a: number, b: number, x: number): number => {
+  const t = Math.max(0, Math.min(1, (x - a) / (b - a)))
+  return t * t * (3 - 2 * t)
+}
+
 export type GroundFn = (x: number, z: number, fromY: number) => number
 
 export interface Foot {
@@ -81,6 +108,9 @@ export class Gait {
   private started = false
   private stillFor = 0
   private closing = false
+  /** Rate-limited body height; see supportHeight. null until the first frame. */
+  private supportY: number | null = null
+  private lastDt = 1 / 60
 
   constructor(readonly spec: GaitSpec) {
     this.feet = spec.phases.map(() => ({
@@ -116,6 +146,8 @@ export class Gait {
     this.phase = 0
     this.stride = this.spec.strideLen
     this.closing = false
+    // A teleport is not a fall: the rate limit must not ease him across the map.
+    this.supportY = null
     const { duty, phases, lift } = this.spec
     const stride = this.stride
     const fx = Math.sin(heading)
@@ -179,6 +211,7 @@ export class Gait {
     hold = false,
   ): void {
     if (!this.started) this.reset(root, heading, ground)
+    this.lastDt = dt
     for (const f of this.feet) f.justPlanted = false
     if (hold) {
       this.stillFor = 0
@@ -383,31 +416,95 @@ export class Gait {
     contactLift: number[],
     ceiling: number,
   ): number {
-    let best = ceiling
+    // What height the body can be at, given where its feet are.
+    //
+    // Each foot that is down says "the hips can be no higher than this, or my
+    // leg comes off the ground". The body takes the lowest such ceiling. Two
+    // things stop that from being a naive minimum.
     let lowest = ceiling
+    let n = 0
     for (let i = 0; i < this.feet.length; i++) {
       const f = this.feet[i]
       // A foot about to land counts too. Considering only what is already down
       // leaves the reaching leg short for the last few frames of its swing —
       // measured at 51 mm on the dog's forelegs — because the body only drops
       // to meet the foot after it has arrived. A real gait dips into the step.
-      const landing = !f.planted && f.stance === 0 && this.swingT(i) > 0.78
+      //
+      // It comes in GRADUALLY. Switched on the frame swingT crossed its
+      // threshold, a landing foot arrived at full weight in one step and took
+      // the support height with it. `slack` runs from LAND_SLACK to zero across
+      // the window, and a slackened foot can never be the binding minimum, so
+      // not-counting to counting is continuous.
+      const landing = !f.planted && f.stance === 0 && this.swingT(i) > LAND_FROM
       if (!f.planted && !landing) continue
       const target = landing ? f.to : f.pos
-      if (target.y < lowest) lowest = target.y
+      const slack = landing
+        ? LAND_SLACK * (1 - smoothstep(LAND_FROM, 1, this.swingT(i)))
+        : 0
       this.hipWorld(i, root, heading, _v)
       const horiz = Math.hypot(_v.x - target.x, _v.z - target.z)
       const r = reach[i]
       const vertical = Math.sqrt(Math.max(0, r * r - horiz * horiz))
-      const allow = target.y + contactLift[i] + vertical - hipY[i]
-      if (allow < best) best = allow
+      _allow[n] = target.y + contactLift[i] + vertical - hipY[i] + slack
+      _footY[n] = target.y + slack
+      n++
+      if (target.y + slack < lowest) lowest = target.y + slack
     }
+    if (n === 0) return ceiling
+
     // The floor is measured from the LOWEST planted foot, not the highest.
     // Measured from the highest, a boy with one foot up a 27 cm step was held
     // 20 cm above what his low leg could reach, and that leg's sole hung in the
     // air behind him — 153 mm of reach error and the worst slide in the take.
     // On the flat the two are the same number and this costs nothing.
-    return Math.max(best, lowest - (this.spec.maxDip ?? 0.08))
+    const floor = lowest - (this.spec.maxDip ?? 0.08)
+
+    // A foot that would pull the body below the dip budget is a heel COMING
+    // OFF, not an anchor, and it must stop voting rather than be clamped.
+    //
+    // Clamping was the old behaviour and it is what produced the settle's
+    // camera jolt. A boy stopping stands mid-stride with his trailing foot most
+    // of a stride behind him; that foot demanded a body height 28 cm down, the
+    // clamp caught it at maxDip, and he spent the whole 0.8 s of his closing
+    // step driven 120 mm INTO the ground — then popped back up in a single
+    // frame the moment the feet came together. The camera frames on this
+    // height, so the one beat that exists to prove he settles had the world
+    // twitch in the middle of it. A walker does not squat to keep a trailing
+    // foot down. He lets the heel lift, which is what dropping the vote means.
+    let best = ceiling
+    let any = false
+    for (let i = 0; i < n; i++) {
+      if (_allow[i] < floor) continue
+      any = true
+      if (_allow[i] < best) best = _allow[i]
+    }
+    // Every foot stretched at once — stepping down off something — is the one
+    // case where the dip budget really is the answer.
+    const want = any ? Math.max(best, floor) : floor
+
+    // And the body gets there at a body's pace.
+    //
+    // Everything above is a geometric constraint evaluated fresh each frame,
+    // and geometry can step. The worst case is a stop: a boy's trailing foot
+    // ends most of a stride behind him, single support demands a hip height his
+    // leg cannot give, the dip budget catches it -- and then his closing step
+    // plants and the constraint releases ALL AT ONCE. Measured: 120 mm in one
+    // frame with him standing still. The camera frames on this height, so that
+    // is the world twitching inside the beat that exists to show him settle.
+    //
+    // Hips do not move 120 mm in 17 ms. Falling is gravity and can be quick;
+    // rising is muscular and is not. Rate-limiting here rather than smoothing
+    // afterwards matters: the legs are solved against whatever this returns, so
+    // a filter applied after the solve leaves the feet hanging off the ground
+    // by the difference -- which is a bug this rig has already had once.
+    if (this.supportY === null) this.supportY = want
+    else {
+      const dt = Math.max(this.lastDt, 1e-4)
+      const d = want - this.supportY
+      const cap = (d > 0 ? SUPPORT_RISE : SUPPORT_FALL) * dt
+      this.supportY += Math.abs(d) <= cap ? d : Math.sign(d) * cap
+    }
+    return this.supportY
   }
 }
 

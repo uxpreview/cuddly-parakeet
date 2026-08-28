@@ -25,7 +25,8 @@ import * as THREE from 'three'
 import { consumeWhistleRequest } from '../game/input'
 import { world } from '../game/world'
 import { now, rand } from '../game/clock'
-import { CH1 } from '../art/palette'
+import { recFrame } from '../game/record'
+import { BOY, CH1 } from '../art/palette'
 
 export function WhistleSystem() {
   useFrame(() => {
@@ -58,6 +59,18 @@ const MAX_CUES = 3
 const BIRDS_PER_CUE = 7
 const CUE_MS = 2600
 const PUFFS_PER_CUE = 4
+/** Wingtip to wingtip, metres. See birdGeometry(): S is the half-span. */
+const BIRD_SPAN = 0.84
+/**
+ * And never narrower than this on screen. Same argument as the collar's floor
+ * (D21) and the same failure without it: the answer arrives from wherever the
+ * dog is, which in this chapter is fifteen to thirty metres up the canyon, and
+ * at thirty metres a real bird is four pixels. Four pixels of anything is dirt
+ * on the lens. Up close the factor is exactly 1.
+ */
+const BIRD_MIN_PX = 11
+
+const _wp = new THREE.Vector3()
 
 /**
  * One bird: a shallow V of two triangles, seen as a silhouette. Nothing else is
@@ -112,7 +125,11 @@ function rollCue(): { birds: Bird[]; puffs: Puff[] } {
     const az = (i / BIRDS_PER_CUE) * Math.PI * 2 + (rand() - 0.5) * 1.5
     birds.push({
       az,
-      rise: 7 + rand() * 7,
+      // They have to clear the treeline into open sky, or a dark bird is fired
+      // at a dark canopy and the whole cue is spent against the one background
+      // that hides it. From the following camera the pines top out around ten
+      // metres above the canyon floor.
+      rise: 11 + rand() * 8,
       drift: 5 + rand() * 7,
       flap: 7 + rand() * 5,
       phase: rand() * Math.PI * 2,
@@ -148,16 +165,29 @@ export function WhistleCues() {
     return { bird: birdGeometry(), puff }
   }, [])
 
-  // Birds read as a DARK silhouette against a pale sky, which is the only thing
-  // that survives at eighty metres. Pine is a documented hex and no new colour
-  // enters the chapter for this. The dust is the path value it is lifted from.
+  // Birds read as a DARK silhouette, which is the only thing that survives at
+  // eighty metres. No new colour enters the chapter for this: both hexes below
+  // are already documented in the palette.
+  //
+  // They were CH1.pine, and the dust was CH1.path. Both were invisible, and
+  // measurably so. The birds are fired from the dog's position on the canyon
+  // floor, which from the following camera is in front of a full pine treeline
+  // of the identical hex: across the answer the frame's pine-hex pixel count
+  // went from 88 at rest to 135 at peak -- seven birds, six pixels each, drawn
+  // in the colour of what is behind them. The dust was the path value lifted
+  // off the path, semi-transparent, same hue and same value: it could not be
+  // seen and never could have been.
+  //
+  // A silhouette is a value contrast or it is nothing. Boy-hair brown sits 40 L
+  // below pine and 90 below the sky, and limestone shadow is the darkest thing
+  // the ground palette owns.
   const mats = useMemo(
     () => ({
       bird: Array.from(
         { length: MAX_CUES },
         () =>
           new THREE.MeshBasicMaterial({
-            color: CH1.pine.hex,
+            color: BOY.hair.hex,
             transparent: true,
             opacity: 0,
             depthWrite: false,
@@ -169,7 +199,7 @@ export function WhistleCues() {
         { length: MAX_CUES },
         () =>
           new THREE.MeshBasicMaterial({
-            color: CH1.path.hex,
+            color: CH1.limestoneShadow.hex,
             transparent: true,
             opacity: 0,
             depthWrite: false,
@@ -188,8 +218,12 @@ export function WhistleCues() {
     }
   }, [geo, mats])
 
-  useFrame(() => {
+  useFrame((state) => {
     const t = now()
+    let liveBirds = 0
+    let livePuffs = 0
+    let maxPx = 0
+    let maxOp = 0
 
     // Spawn on a new answer. Recycle the oldest slot if all are live so
     // overlapping answers can never crash or leak.
@@ -242,6 +276,23 @@ export function WhistleCues() {
         const beat = Math.sin(u * b.flap * Math.PI * 2 + b.phase)
         mesh.rotation.set(beat * 0.55, -b.az + Math.PI / 2, b.bank * (1 - u))
         mesh.scale.setScalar(u > 0 ? 1 : 0.001)
+        // (the floor below rescales this when the bird is far)
+        if (u > 0) {
+          liveBirds++
+          maxOp = Math.max(maxOp, mats.bird[si].opacity)
+          mesh.getWorldPosition(_wp)
+          const d = _wp.distanceTo(state.camera.position)
+          const cam = state.camera as THREE.PerspectiveCamera
+          const perPx =
+            (2 * Math.tan((cam.fov * Math.PI) / 360)) / Math.max(state.size.height, 1)
+          const px = BIRD_SPAN / Math.max(d, 0.01) / perPx
+          // The screen-size floor, applied about the bird's own centre so a
+          // near bird is untouched and a far one stays a bird rather than
+          // becoming a speck.
+          const k = px < BIRD_MIN_PX ? BIRD_MIN_PX / Math.max(px, 0.01) : 1
+          mesh.scale.setScalar(k)
+          if (px * k > maxPx) maxPx = px * k
+        }
       }
       for (let pi = 0; pi < PUFFS_PER_CUE; pi++) {
         const mesh = puffMeshes.current[si * PUFFS_PER_CUE + pi]
@@ -251,7 +302,15 @@ export function WhistleCues() {
         const s = p.size * (0.35 + u * 1.5)
         mesh.position.set(Math.cos(p.az) * p.reach * u, 0.05 + p.rise * u, Math.sin(p.az) * p.reach * u)
         mesh.scale.set(s, 1, s)
+        if (u > 0 && mats.puff[si].opacity > 0.01) livePuffs++
       }
+    }
+
+    recFrame.cue = {
+      birds: liveBirds,
+      puffs: livePuffs,
+      maxPx: Math.round(maxPx * 10) / 10,
+      opacity: Math.round(maxOp * 100) / 100,
     }
   })
 

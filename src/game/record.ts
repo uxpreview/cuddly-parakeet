@@ -43,6 +43,20 @@ export interface RecProbe {
     soleR: number[]
   }
   dogPaws?: { at: number[]; plant: number; leg: string; sole: number[] }[]
+  /**
+   * The height the boy is SEEN standing at (what the camera frames on), the
+   * settle dip subtracted from it, and how many feet are planted. A jump here
+   * with the boy at rest is a camera jolt, and there was an 8 px one inside the
+   * settle beat.
+   */
+  boyY?: { support: number; dip: number; planted: number }
+  /**
+   * The boy's hands, in his own frame: how far each sits across his body axis
+   * and how far fore-aft. The camera in this game sits directly behind him, so
+   * `across` is the part of an arm swing a player can actually see, and the
+   * fore-aft part is nearly all depth.
+   */
+  boyArms?: { acrossL: number; acrossR: number; aheadL: number; aheadR: number }
   dogAnim?: {
     sit: number
     look: number
@@ -53,6 +67,13 @@ export interface RecProbe {
     speed: number
     gaitPhase: number
   }
+  /**
+   * The whistle answer's visual correlate, measured rather than asserted: how
+   * many birds are up, the widest one's on-screen span in pixels, and the
+   * material opacity. The must-confirm is that the answer is legible with sound
+   * off, and a bird that is two pixels wide at 0.1 opacity is not.
+   */
+  cue?: { birds: number; puffs: number; maxPx: number; opacity: number }
   prints?: { kind: string; at: number[]; side: number; t: number }[]
   lookBack?: { variant: number; t: number }
 }

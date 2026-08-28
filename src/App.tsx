@@ -10,6 +10,7 @@ import { CameraRig } from './components/CameraRig'
 import { Dog } from './components/Dog'
 import { Prints } from './components/Prints'
 import { WhistleSystem, WhistleCues } from './components/WhistleSystem'
+import { ActorShadow } from './components/ActorShadow'
 import { PerfProbe, PerfHudOverlay } from './components/PerfHud'
 import { Joystick } from './ui/Joystick'
 import { WhistleButton } from './ui/WhistleButton'
@@ -90,6 +91,24 @@ function Game() {
             <Player />
             <CameraRig />
             <Dog />
+            <ActorShadow
+              footprint={0.34}
+              height={1.15}
+              strength={0.45}
+              core={0.3}
+              follow={() => ({
+                x: world.player.pos.x,
+                y: world.player.visualY,
+                z: world.player.pos.z,
+              })}
+            />
+            <ActorShadow
+              footprint={0.26}
+              height={0.5}
+              strength={0.55}
+              core={0.38}
+              follow={() => ({ x: world.dog.pos.x, y: world.dog.pos.y, z: world.dog.pos.z })}
+            />
             <Prints />
             <WhistleSystem />
             <WhistleCues />

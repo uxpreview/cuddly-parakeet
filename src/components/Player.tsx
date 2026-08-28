@@ -6,6 +6,7 @@ import { useGame } from '../game/store'
 import { world, sampleGround, artGround, updateTriggers, isDev } from '../game/world'
 import { pushPrint } from '../game/trail'
 import { recFrame } from '../game/record'
+import { isRecording } from '../game/clock'
 import { buildBoyRig, boyRest, BOY_GAIT } from '../art/characters'
 import { Gait, solveChain, setWorldQuaternion, type Chain } from '../game/gait'
 
@@ -25,6 +26,13 @@ import { Gait, solveChain, setWorldQuaternion, type Chain } from '../game/gait'
 // minute, which is not a walk at any size. 1.15 puts him at 184, and it puts
 // the chapter's 595 m of route at 8.6 minutes against the ~8 the story bible
 // asks for — closer than 1.6's 6.2. game-design.md names no number for this.
+/**
+ * How much of the arm swing is lateral rather than fore-aft. See the note at
+ * the swing itself: the fore-aft component runs down the camera's depth axis
+ * and is nearly invisible from behind, which is where this game's camera lives.
+ */
+const ARM_LATERAL = 0.34
+
 const WALK_SPEED = 1.15
 const ACCEL = 8 // m/s^2 toward intent
 // 4.5 m/s^2, which takes him 0.26 s and 15 cm to stop from a walk. It was 12,
@@ -45,6 +53,7 @@ const _foot = new THREE.Vector3()
 const _hip = new THREE.Vector3()
 const _q = new THREE.Quaternion()
 const _fwdWorld = new THREE.Vector3()
+const _hand = new THREE.Vector3()
 
 function wrapAngle(a: number): number {
   return Math.atan2(Math.sin(a), Math.cos(a))
@@ -74,6 +83,15 @@ export function Player() {
   const ankleLift = useMemo(() => rest.ankleL.pos.y, [rest])
   const legReach = useMemo(() => chains.map((c) => c.l1 + c.l2), [chains])
   const hipY = useMemo(() => [rest.hipL.pos.y, rest.hipR.pos.y], [rest])
+  // Dev-only: tools/dev/legroom.mjs reads this. How much the knee can bend at
+  // rest is the margin the whole support solve has to work in.
+  if (typeof window !== 'undefined')
+    (window as unknown as Record<string, unknown>).__legroom = {
+      hipY: hipY[0],
+      legReach: legReach[0],
+      ankleLift,
+      standingSlack: +(legReach[0] + ankleLift - hipY[0]).toFixed(4),
+    }
 
   const vel = useRef(new THREE.Vector3()).current
   const st = useRef({
@@ -285,6 +303,11 @@ export function Player() {
     root.rotation.y = heading
     rig.group.position.y = support - st.dip
     world.player.visualY = support
+    recFrame.boyY = {
+      support: +support.toFixed(5),
+      dip: +st.dip.toFixed(5),
+      planted: gait.feet.reduce((a, f) => a + (f.planted ? 1 : 0), 0),
+    }
     rig.group.updateMatrixWorld(true)
 
     const pelvis = rig.joints.pelvis
@@ -333,18 +356,50 @@ export function Player() {
     }
 
     // --- arms: they swing against the legs, and lag ---------------------------
+    //
+    // The fore-aft swing is about X, which is the camera's DEPTH axis: this
+    // game's camera sits directly behind the boy at 18 degrees, so 0.62 rad of
+    // it moved his arms by one to two pixels across a whole stride. Measured
+    // from the game's own camera he walked with two static sticks.
+    //
+    // So the swing carries a lateral component too. It is not a cheat: an arm
+    // swinging forward comes IN across the body and going back swings OUT, and
+    // that cross-body component is the part a camera behind him can see.
     const armSwing = -Math.sin(gait.phase * Math.PI * 2 - 0.35) * 0.62 * gaitAmp
+    const armOut = armSwing * ARM_LATERAL
     const rest2 = rig.rest
     rig.joints.shoulderL.rotation.set(
       rest2.shoulderL.x - armSwing,
       0,
-      rest2.shoulderL.z,
+      rest2.shoulderL.z + armOut,
     )
     rig.joints.shoulderR.rotation.set(
       rest2.shoulderR.x + armSwing,
       0,
-      rest2.shoulderR.z,
+      rest2.shoulderR.z + armOut,
     )
+    // What a camera behind him can see of that: the hands' excursion ACROSS his
+    // body, measured in his own frame rather than argued about.
+    if (isRecording()) {
+      rig.group.updateMatrixWorld(true)
+      const cs = Math.cos(-heading)
+      const sn = Math.sin(-heading)
+      const arm = (name: string) => {
+        rig.joints[name].getWorldPosition(_hand)
+        const dx = _hand.x - pos.x
+        const dz = _hand.z - pos.z
+        return { across: dx * cs - dz * sn, ahead: dx * sn + dz * cs }
+      }
+      const l = arm('elbowL')
+      const r = arm('elbowR')
+      recFrame.boyArms = {
+        acrossL: +l.across.toFixed(4),
+        acrossR: +r.across.toFixed(4),
+        aheadL: +l.ahead.toFixed(4),
+        aheadR: +r.ahead.toFixed(4),
+      }
+    }
+
     // The forearm trails the upper arm: an arm swinging as one stick is a
     // pendulum, and a walking child's elbow is always a little bent.
     rig.joints.elbowL.rotation.x = -0.32 - Math.max(0, armSwing) * 0.55

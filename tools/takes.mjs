@@ -29,18 +29,29 @@ export const TAKES = [
     seconds: 15,
     fps: 30,
     // The reel Gate 3 asks for, staged on the open bank below the first bend —
-    // river on one side, wall on the other, and enough room that the dog is at
-    // reading size for the whole take. He walks, stops dead and settles,
-    // whistles, the answer arrives at the dog, and the dog trots on.
+    // river on one side, wall on the other. He walks, whistles, the answer
+    // arrives at the dog, he stops dead and settles, whistles again, and walks
+    // on while the dog draws back out to his lead.
+    //
+    // The pair open SIX metres apart, not twelve, and the first whistle is at
+    // t=3 rather than t=5.4. game-design.md's distance discipline is 20 to 45 m
+    // at trot and it is not negotiable, so the dog is going to draw away — the
+    // first pass simply let him do it for the whole take and every beat played
+    // at eleven to twenty-four pixels of dog, which is a reel that cannot show
+    // what Gate 3 asks it to show. Opening close and answering early puts the
+    // two answers, which are now body events, inside the range where they read;
+    // the back half of the take is where the lead re-establishes itself, which
+    // is worth seeing too.
     setup: [
-      ['dogTo', 1, 52],
+      ['dogTo', 1, 46],
       ['placeAtNode', 1, 40],
     ],
     at: [
       [0.0, 'steer', 'route', 5],
-      [4.6, 'steer', 'stop'],
-      [5.4, 'whistle'],
-      [8.2, 'steer', 'route', 5],
+      [3.0, 'whistle'],
+      [6.4, 'steer', 'stop'],
+      [9.5, 'whistle'],
+      [11.5, 'steer', 'route', 5],
     ],
   },
   {
@@ -55,7 +66,7 @@ export const TAKES = [
     setup: [
       ['framed', false],
       ['dogTo', 12],
-      ['placeAtNode', 12, -15],
+      ['placeAtNode', 12, -11],
     ],
     at: [[0.0, 'steer', 'dog']],
   },
@@ -70,7 +81,11 @@ export const TAKES = [
     // The dog enters the node at t=0, not in the setup: the harness settles for
     // three quarters of a second before the clock starts, and variant A only
     // lasts 0.85, so a look-back staged in the setup is over before frame 0.
-    setup: [['placeAtNode', 4, -11]],
+    // Seven metres behind the node, not eleven: at eleven the dog came back
+    // twenty-five pixels tall and variants A and B could not be told apart,
+    // which is the whole thing this take exists to show. Seven is still well
+    // outside arm's reach, which is what story rule 4 asks for.
+    setup: [['placeAtNode', 4, -7]],
     // The BOY goes back with him. Re-entering the node alone leaves the dog
     // standing where the boy has since walked to — a metre away by the third
     // variant, which is both unreadable and a breach of story rule 4. Resetting
@@ -80,9 +95,9 @@ export const TAKES = [
       [0.0, 'steer', 'route', 5],
       [0.0, 'dogTo', 4],
       [4.3, 'dogTo', 4],
-      [4.3, 'placeAtNode', 4, -11],
+      [4.3, 'placeAtNode', 4, -7],
       [8.6, 'dogTo', 4],
-      [8.6, 'placeAtNode', 4, -11],
+      [8.6, 'placeAtNode', 4, -7],
     ],
   },
   {
