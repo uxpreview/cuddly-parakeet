@@ -39,6 +39,8 @@ const ASIDE_RATE = 0.55
 /** The trot weave: amplitude in metres, and its wavelength in metres of route. */
 const WEAVE_AMP = 0.75
 const WEAVE_LEN = 5.2
+/** How fast the weave fades in and out at a node boundary, per second. */
+const WEAVE_EASE = 1.1
 /**
  * How long his head stays home after a look-back before another may start.
  * Long enough that the return is visible as a return, at the sizes this chapter
@@ -208,6 +210,7 @@ interface DogState {
   /** Metres currently offset from the route line, and which side. See asideDir. */
   aside: number
   asideSide: number
+  weaveMix: number
   prevLookTarget: number
   lookRefractoryUntil: number
   // idle glances at the player
@@ -264,6 +267,7 @@ function makeState(): DogState {
     escapeNextLookAt: 0,
     aside: 0,
     asideSide: 0,
+    weaveMix: 0,
     prevLookTarget: 0,
     lookRefractoryUntil: 0,
     nextGlanceAt: 3,
@@ -384,6 +388,7 @@ export function Dog() {
     let turnRate = 9
     let holdSway = 0
     let asideTarget = 0
+    /** 1 in the nodes he weaves through, 0 where he holds a position. */
     let weave = 0
     // Look-back staging, read by the rig below. Every look-back in the game —
     // the authored node and the ones the trot schedules for itself — comes out
@@ -431,6 +436,7 @@ export function Dog() {
       st.sniffActive = false
       st.sniffPauseUntil = 0
       st.escapeNextLookAt = 0
+      st.weaveMix = 0
       st.s = Math.min(rn.s1, rn.s0 + off)
       route.pointAt(st.s, _pos)
       st.pos.copy(_pos)
@@ -607,6 +613,7 @@ export function Dog() {
           }
           const v = LOOK_BACKS[st.lbVariant]
           const t = st.clock - st.nodeStart
+          weave = 1
           // He carries the variant's own pace through the node instead of being
           // pinned to its first point.
           //
@@ -709,7 +716,7 @@ export function Dog() {
           // and the prints it lays curve with it -- which is also the end of the
           // trail reading as an evenly spaced dotted line ruled up the middle of
           // the frame.
-          weave = Math.sin(st.s / WEAVE_LEN) * WEAVE_AMP
+          weave = 1
           sp = pace(sp)
           const ds = Math.min(sp * dt, Math.max(0, target - st.s)) // never backward
           st.s += ds
@@ -866,7 +873,16 @@ export function Dog() {
       st.aside = 0
       st.asideSide = 0
     }
-    const lateral = st.aside + weave
+    // The weave eases in and out at node boundaries rather than switching.
+    //
+    // Applied raw it stepped the lateral position by up to 0.75 m in a single
+    // frame every time he entered or left a trot -- measured as 498 mm of paw
+    // slide and 513 mm of reach error in the lookbacks take, which is the same
+    // class of fault as the on-screen teleport this iteration set out to fix,
+    // and the gait instrument caught it within one recording of it landing.
+    st.weaveMix += THREE.MathUtils.clamp(weave - st.weaveMix, -WEAVE_EASE * dt, WEAVE_EASE * dt)
+    const lateral =
+      st.aside + Math.sin(st.s / WEAVE_LEN) * WEAVE_AMP * st.weaveMix
     if (Math.abs(lateral) > 1e-4) {
       route.directionAt(st.s, _asideDir)
       _aside.set(_asideDir.z, 0, -_asideDir.x)
