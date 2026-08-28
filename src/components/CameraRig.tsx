@@ -38,7 +38,7 @@ const DOG_BIAS = 0.25
  * than chosen per frame, because a rig that picks its shoulder each frame swings
  * every time the dog crosses the axis.
  */
-const DOG_SHIFT = 0.62
+const DOG_SHIFT = 0.95
 const DOG_CONE_DOT = 0.45 // "roughly in front": within ~63 degrees of view axis
 const BLEND_TIME = 1.5 // framed-moment blend seconds
 const SNAP_DIST = 30 // a jump larger than this (dev teleport) snaps the rig
@@ -132,6 +132,11 @@ export function CameraRig() {
       pos.copy(_desired)
       look.copy(_lookGoal)
       occDistRef.current = DIST
+      // The shoulder slide arrives with the dog, but on the FIRST frame there
+      // is nothing to arrive from: the take's opening frames were composed as
+      // though the dog were not there, and the worst stacking in the walk take
+      // was at t=0.82s while the bias was still ramping in.
+      dogBiasRef.current = biasTarget
     }
 
     // --- damped follow ------------------------------------------------------

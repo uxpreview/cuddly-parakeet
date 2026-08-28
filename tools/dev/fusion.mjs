@@ -64,6 +64,9 @@ for (const t of ['walk', 'nearmiss', 'lookbacks', 'ford']) {
   let worst = 1e9
   let at = 0
   let body = 0
+  // In --live mode one page runs every take, so the virtual clock accumulates:
+  // report time within the take, not since the browser opened.
+  const t0 = P.length ? P[0].t : 0
   for (const p of P) {
     if (!p.boyScreen) continue
     const dogFeet = p.dogScreen[1]
@@ -73,7 +76,7 @@ for (const t of ['walk', 'nearmiss', 'lookbacks', 'ford']) {
     const sep = Math.max(Math.abs(dogFeet - boyCrown), Math.abs(p.dogScreen[0] - p.boyScreen[0]))
     if (sep < worst) {
       worst = sep
-      at = p.t
+      at = p.t - t0
       body = p.dogScreen[2]
     }
   }
