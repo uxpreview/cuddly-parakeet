@@ -25,13 +25,12 @@ import { mkdirSync, existsSync, writeFileSync, rmSync, readFileSync } from 'node
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { SEED, TAKES, VIEWPORTS } from './takes.mjs'
+import { writeSheets } from './sheets.mjs'
 
 const BASE = process.env.BASE ?? 'http://127.0.0.1:5174'
 const OUT = process.env.OUT ?? 'renders/g3-latest'
 const VIEW = process.env.VIEW ?? 'desktop'
 const ONLY = process.argv.slice(2)
-const SHEET_COLS = 6
-const SHEET_ROWS = 5
 // The bundled ffmpeg playwright uses for its own video capture. VP8 in WebM is
 // the only codec it carries, which is all a review recording needs.
 const FFMPEG = process.env.FFMPEG ?? '/opt/pw-browsers/ffmpeg-1011/ffmpeg-linux'
@@ -127,116 +126,16 @@ for (const take of takes) {
   )
 
   // --- contact sheets -----------------------------------------------------
-  // A critic that reads stills needs the whole take at once, evenly sampled,
-  // with each cell labelled by its time so a note can cite a moment. And a
-  // second sheet cropped around the DOG, because at the distances this chapter
-  // stages him he is twenty pixels tall in the wide one and no judgement about
-  // his gait, his tail or his look-backs can be made from that.
-  const cells = SHEET_COLS * SHEET_ROWS
-  const picks = Array.from({ length: cells }, (_, i) =>
-    Math.min(frames - 1, Math.round((i * (frames - 1)) / (cells - 1))),
-  )
   const sheetPage = await (await browser.newContext()).newPage()
-  const sheet = await sheetPage.evaluate(
-    async ({ imgs, cols, rows, labels }) => {
-      const loaded = await Promise.all(
-        imgs.map(async (src) => {
-          const im = new Image()
-          im.src = src
-          await im.decode()
-          return im
-        }),
-      )
-      const w = loaded[0].width
-      const h = loaded[0].height
-      const scale = Math.min(1, 420 / w)
-      const cw = Math.round(w * scale)
-      const ch = Math.round(h * scale)
-      const pad = 4
-      const c = document.createElement('canvas')
-      c.width = cols * cw + (cols + 1) * pad
-      c.height = rows * (ch + 16) + (rows + 1) * pad
-      const x = c.getContext('2d')
-      x.fillStyle = '#141414'
-      x.fillRect(0, 0, c.width, c.height)
-      loaded.forEach((im, i) => {
-        const cx = pad + (i % cols) * (cw + pad)
-        const cy = pad + Math.floor(i / cols) * (ch + 16 + pad)
-        x.drawImage(im, cx, cy, cw, ch)
-        x.fillStyle = '#cfcfcf'
-        x.font = '12px monospace'
-        x.fillText(labels[i], cx + 2, cy + ch + 12)
-      })
-      return c.toDataURL('image/png')
-    },
-    {
-      imgs: picks.map(
-        (f) =>
-          'data:image/jpeg;base64,' +
-          readFileSync(join(frameDir, `${String(f).padStart(4, '0')}.jpg`)).toString('base64'),
-      ),
-      cols: SHEET_COLS,
-      rows: SHEET_ROWS,
-      labels: picks.map((f) => `t=${(f / take.fps).toFixed(2)}s  f${f}`),
-    },
-  )
-  writeFileSync(join(OUT, `${name}-sheet.png`), Buffer.from(sheet.split(',')[1], 'base64'))
-
-  const detail = await sheetPage.evaluate(
-    async ({ imgs, cols, rows, labels, boxes, dsf }) => {
-      const loaded = await Promise.all(
-        imgs.map(async (src) => {
-          const im = new Image()
-          im.src = src
-          await im.decode()
-          return im
-        }),
-      )
-      const CW = 300
-      const CH = 190
-      const pad = 4
-      const c = document.createElement('canvas')
-      c.width = cols * CW + (cols + 1) * pad
-      c.height = rows * (CH + 16) + (rows + 1) * pad
-      const x = c.getContext('2d')
-      x.imageSmoothingEnabled = false
-      x.fillStyle = '#141414'
-      x.fillRect(0, 0, c.width, c.height)
-      loaded.forEach((im, i) => {
-        const cx = pad + (i % cols) * (CW + pad)
-        const cy = pad + Math.floor(i / cols) * (CH + 16 + pad)
-        // Zoom so the dog is about a third of the cell's height, whatever range
-        // he happens to be at, and clamp the crop inside the frame.
-        const zoom = Math.max(1, Math.min(9, (CH / 3) / Math.max(4, boxes[i][2])))
-        const sw = CW / zoom
-        const sh = CH / zoom
-        const sx = Math.max(0, Math.min(im.width - sw, boxes[i][0] * dsf - sw / 2))
-        const sy = Math.max(0, Math.min(im.height - sh, boxes[i][1] * dsf - sh * 0.55))
-        x.drawImage(im, sx, sy, sw, sh, cx, cy, CW, CH)
-        x.fillStyle = '#cfcfcf'
-        x.font = '12px monospace'
-        x.fillText(labels[i], cx + 2, cy + CH + 12)
-        x.fillStyle = '#141414'
-      })
-      return c.toDataURL('image/png')
-    },
-    {
-      imgs: picks.map(
-        (f) =>
-          'data:image/jpeg;base64,' +
-          readFileSync(join(frameDir, `${String(f).padStart(4, '0')}.jpg`)).toString('base64'),
-      ),
-      cols: SHEET_COLS,
-      rows: SHEET_ROWS,
-      dsf: vp.dsf,
-      boxes: picks.map((f) => probes[f].dogScreen ?? [0, 0, 20]),
-      labels: picks.map((f) => {
-        const p = probes[f]
-        return `${(f / take.fps).toFixed(2)}s ${p.dog.activity}`
-      }),
-    },
-  )
-  writeFileSync(join(OUT, `${name}-dog.png`), Buffer.from(detail.split(',')[1], 'base64'))
+  await writeSheets(sheetPage, {
+    out: OUT,
+    name,
+    frameDir,
+    frames,
+    fps: take.fps,
+    probes,
+    dsf: vp.dsf,
+  })
   await sheetPage.context().close()
 
   console.log(

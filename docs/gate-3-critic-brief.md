@@ -42,17 +42,27 @@ minimaps, objective text; no UI drawn into the world; no toon outlines.
 
 Under the renders directory named in the invitation:
 
-- `<take>-desktop-sheet.png` — thirty frames of the take, evenly spaced, each
-  labelled with its time.
-- `<take>-desktop-dog.png` — the same thirty frames cropped and magnified around
-  the dog, each labelled with its time and his current activity. At the ranges
-  this chapter stages him he is twenty pixels tall in the wide sheet; judge his
-  gait, his tail and his look-backs from THIS sheet and his staging from the
-  other.
+- `<take>-desktop-sheet-N.png` — thirty frames of the take, evenly spaced, each
+  labelled with its time, six to a page across five pages.
+- `<take>-desktop-dog-N.png` — the same thirty frames cropped and magnified
+  around the dog, each labelled with its time and his current activity, sixteen
+  to a page. At the ranges this chapter stages him he is twenty pixels tall in
+  a wide cell; judge his gait, his tail and his look-backs from THESE pages and
+  his staging from the wide ones.
 - `<take>-desktop.json` — the per-frame probe: positions, activity, gait phase,
   foot plant states, the prints laid, tail amplitude and rate, look-back variant.
 - `<take>-desktop.webm` — the recording itself, if you can read it. You probably
   cannot; the sheets exist because of that.
+
+A wide cell is a bit-exact 2:1 reduction of the captured frame — measured, mean
+absolute difference 0.00/255 — so what is in it is what the game drew. But it is
+still half size, and this canyon's strata sit four to eight pixels apart at full
+resolution. **Do not judge cliff or terrain detail from a sheet cell.** If a wall
+appears to streak, fan, or radiate, call for a full-resolution frame before
+writing it up: `node tools/dev/beat.mjs <take> <seconds> out.png` renders any
+moment of any take at capture resolution. Every previous report of a "radial fan"
+across the cliffs turned out to be resampling in the reader, present in no
+captured frame at 960 or 1280.
 
 Takes: `walk` (the Gate 3 reel — walking, stopping, whistling, the answer,
 trotting), `nearmiss`, `lookbacks`, `ford` (the hazard-wait).
