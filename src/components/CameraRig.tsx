@@ -23,6 +23,22 @@ const OCC_STEP = 0.4
 const MIN_CAM_DIST = 1.8
 const DOG_RANGE = 55
 const DOG_BIAS = 0.25
+/**
+ * How far the rig slides sideways while the dog is composed with the boy, in
+ * metres. game-design.md asks the framing to bias "toward keeping both of them
+ * composed", and two subjects stacked into one vertical column are not composed
+ * -- measured across four takes, the dog's feet came within 0 to 8 px of the
+ * boy's crown while the dog's own body was 15 to 30 px, which is the Gate 2
+ * hero-shot fusion reproduced by the follow camera.
+ *
+ * Only a TRANSLATION can fix it. Moving the look target is a rotation and shifts
+ * both subjects by the same angle, so it cannot separate them; sliding the rig
+ * sideways separates them by parallax, because the boy at 6.5 m moves about
+ * three times as far across frame as a dog at twenty. The side is fixed rather
+ * than chosen per frame, because a rig that picks its shoulder each frame swings
+ * every time the dog crosses the axis.
+ */
+const DOG_SHIFT = 0.62
 const DOG_CONE_DOT = 0.45 // "roughly in front": within ~63 degrees of view axis
 const BLEND_TIME = 1.5 // framed-moment blend seconds
 const SNAP_DIST = 30 // a jump larger than this (dev teleport) snaps the rig
@@ -40,6 +56,7 @@ const _finalLook = new THREE.Vector3()
 const _framedPos = new THREE.Vector3()
 const _framedLook = new THREE.Vector3()
 const _seen = new THREE.Vector3()
+const _side = new THREE.Vector3()
 
 function wrapAngle(a: number): number {
   return Math.atan2(Math.sin(a), Math.cos(a))
@@ -173,6 +190,15 @@ export function CameraRig() {
       _framedLook.set(...framed.lookAt)
       _finalPos.lerp(_framedPos, k)
       _finalLook.lerp(_framedLook, k)
+    }
+
+    // The over-the-shoulder slide. Applied to the POSITION only and never to
+    // the look target: re-aiming at the boy after the slide would re-centre him
+    // and undo the parallax that does the work. Damped through `dogBiasRef`, so
+    // it arrives and leaves with the dog rather than snapping on.
+    if (dogBiasRef.current > 0.001) {
+      _side.set(_facing.z, 0, -_facing.x)
+      _finalPos.addScaledVector(_side, DOG_SHIFT * (dogBiasRef.current / DOG_BIAS))
     }
 
     camera.position.copy(_finalPos)
