@@ -13,7 +13,10 @@ const PITCH = (18 * Math.PI) / 180
 const DIST = 6.5
 const H_DIST = DIST * Math.cos(PITCH) // horizontal offset behind the boy
 const V_DIST = DIST * Math.sin(PITCH) // rise above the look height
-const LOOK_HEIGHT = 1.0
+// 1.3: the look target sits a little above his head, so he stands in the lower
+// half of the frame and the canyon ahead -- the thing he is walking into -- gets
+// the upper two thirds. At 1.0 he was dead centre with half the picture floor.
+const LOOK_HEIGHT = 1.3
 const LEAD = 1.8
 const POS_DAMP = 3.5 // /s exponential damping on camera position
 const LOOK_DAMP = 5.0 // /s on the look target

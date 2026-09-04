@@ -555,3 +555,80 @@ writes a WebM, a wide contact sheet, a second sheet cropped around the dog — a
 the distances this chapter stages him he is twenty pixels tall and no judgement
 about his gait can be made from the wide one — and the per-frame probe the
 numbers come out of. `?rec=` is dev-only, exactly like `?dev`.
+
+---
+
+Polish pass, 2026-09-04. Ryan played the build and filed it as "looks like shit
+and doesn't work well, it's not fun". These are the rulings that answered that,
+each of them a change to something an earlier gate had signed off. Where a
+ruling reverses an earlier one it says so.
+
+## D35 — The chapter opens facing up the canyon, with the dog at heel
+
+The manifest's `spawn.facing` was written in the builder's own heading
+convention (0 = +x) and read by the engine as a three.js yaw (0 = +z), so the
+boy started facing sideways across the river at a striped terrace. The
+builder now converts. And the opening wait's idle was `sniff`, which kept the
+dog in a 2.5 m circle at the spawn while the boy walked away: the bolt then
+played behind the player's back. **Ruling:** a third wait idle, `heel`, for all
+chapters: the dog keeps a single target point beside and a little behind the
+boy, on walkable ground, sniffing when the boy stands still. It is one target
+walked to, not companion AI, and it is what `story.md` asks for: "walking, the
+dog trotting at heel." When the wait releases into a trot the dog projects
+himself onto the next path instead of snapping back to its first point, so he
+bolts from wherever he is.
+
+## D36 — The walk is 1.5 m/s (reverses the 1.15 in D30's note)
+
+1.15 m/s from a camera six and a half metres back covered a screen-width of
+floor in about eight seconds, and slow walking is the first thing anyone says
+about a walking game. 1.5 m/s with a 0.88 m cycle is 205 steps a minute, a
+child hurrying, and the chapter's critical path lands near seven minutes.
+Pace stays authored; no run button exists.
+
+## D37 — The ramp is wide again, and the bake is blurred (reverses parts of D22)
+
+D22 narrowed the lit/shade band to nearly closed so facets would carry the
+wall. Played rather than judged from stills, the cost was the whole picture: a
+face either rendered `#E3C08C` or `#9DA9A2`, the bedding steps alternated
+between them, and every canyon wall was a zebra. The baked sun shadow and the
+sky-visibility term were one value per face on a 2 m bake, so the floor was a
+quilt of grey rectangles. **Ruling:** the world ramp is `[-0.6, 0.32]`, limestone
+slides 0.8 of the way to its shadow hex rather than all of it, ground 0.36.
+Bedding relief is halved and reaches only faces that stand up (on a sloping
+floor it drew contour bands). The mottle's octaves are 3 m and 11 m so
+neighbouring faces agree. The shadow march reads a bilinear heightfield, and
+both baked terms are blurred across a two-face radius in loft space before they
+are written. Every polygon is still one flat colour; the values they carry are
+now continuous. The red audit still passes.
+
+## D38 — Presentation: the chapter card is the loading screen
+
+The game showed a bare canvas, then the world, with a debug HUD in the corner
+on the dev server. **Ruling:** a veil in the chapter's sky colours is there from
+the first paint; the place name settles onto it in a soft serif (Fraunces, OFL,
+with a system serif fallback); the world fades up beneath, the name holds a few
+seconds and goes, and only then does the legend appear. The same card returns
+at the chapter's end. Text is the place name only. The legend and whistle
+button are drawn in the chapter's pine value on a pale veil rather than in
+white on a dark panel. The vertical field of view opens to 68 degrees in
+portrait so the canyon is not a slot.
+
+## D39 — Atmosphere, none of it information
+
+The sky gathers its documented rim value toward the sun, so the sky and the
+haze built from it have a direction. Pale motes drift in the air and show only
+against shade. The river carries a slow, metres-wide band of light. None of
+these carries a signal, none points at the dog, none is a new colour.
+
+## D40 — Audio is synthesised, and the bed is chapter data
+
+No audio direction doc exists (D14). Rather than ship silence, everything is
+built from oscillators and filtered noise at runtime: a canyon bed (river,
+spray, air, a bird now and then), a two-note whistle on the press, a bark on
+the answer panned and dulled by distance from the camera, one higher bark at
+the bolt, and soft footfalls. The manifest names the bed (`synth:canyon-morning`)
+so other chapters ask for their own. Nothing is sampled or sourced. The game
+remains fully playable with sound off; the audio adds nothing the picture does
+not already say. Audio starts on the first gesture, which is the same input
+that dismisses the legend.

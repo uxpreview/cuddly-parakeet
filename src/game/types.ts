@@ -23,7 +23,9 @@ export interface WaitExit {
 
 export type DogNode =
   | { type: 'trot'; path: string; speed?: number }
-  | { type: 'wait'; at: Vec3; until: WaitUntil; exit?: WaitExit; idle?: 'stand' | 'sniff' }
+  // idle: 'stand' holds the point; 'sniff' meanders around it nose down;
+  // 'heel' keeps loosely beside the boy wherever he walks (the opening).
+  | { type: 'wait'; at: Vec3; until: WaitUntil; exit?: WaitExit; idle?: 'stand' | 'sniff' | 'heel' }
   | { type: 'hazard-wait'; at: Vec3; safetyTrigger: string }
   | { type: 'look-back'; at: Vec3; variant: 'auto' | string }
   | {

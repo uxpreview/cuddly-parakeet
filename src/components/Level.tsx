@@ -1,13 +1,13 @@
-import { useMemo } from 'react'
+import { useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { buildTerrainMeshes } from '../game/terrain'
 import { world } from '../game/world'
 import { buildArtTerrain } from '../art/artTerrain'
-import { setFog, setPixelAngle, setSunDirection } from '../art/RampMaterial'
+import { setFog, setPixelAngle, setSunDirection, tickMaterials } from '../art/RampMaterial'
 import { CH1_LIGHT } from '../art/palette'
 import { Sky } from '../art/Sky'
 import { Grain } from '../art/Grain'
-import { useThree } from '@react-three/fiber'
+import { useFrame, useThree } from '@react-three/fiber'
 
 // The chapter's world.
 //
@@ -74,6 +74,7 @@ export function Level() {
         <Sky />
         <primitive object={art.group} />
         <Grain />
+        <Clock />
       </>
     )
   }
@@ -89,4 +90,14 @@ export function Level() {
       <primitive object={grey} />
     </>
   )
+}
+
+// The one clock the moving materials read (the water's light band).
+function Clock() {
+  const t = useRef(0)
+  useFrame((_, dt) => {
+    t.current += Math.min(dt, 0.05)
+    tickMaterials(t.current)
+  })
+  return null
 }

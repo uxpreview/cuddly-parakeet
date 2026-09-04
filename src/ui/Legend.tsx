@@ -4,6 +4,7 @@
 
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { input } from '../game/input'
+import { CH1 } from '../art/palette'
 
 const STORAGE_KEY = 'tlwh-legend-seen'
 
@@ -23,7 +24,9 @@ function markSeen() {
   }
 }
 
-const INK = '#f4f2ea'
+// Ink in the chapter's own dark: the pine. The card, the button and this all
+// share it, so the little UI there is belongs to the morning it sits on.
+const INK = CH1.pine.hex
 
 function Cap({ label, wide }: { label?: string; wide?: boolean }) {
   return (
@@ -35,11 +38,11 @@ function Cap({ label, wide }: { label?: string; wide?: boolean }) {
         minWidth: wide ? 64 : 26,
         height: 26,
         padding: '0 5px',
-        borderRadius: 5,
-        border: `1px solid rgba(244, 242, 234, 0.5)`,
-        background: 'rgba(244, 242, 234, 0.08)',
+        borderRadius: 6,
+        border: `1px solid rgba(78, 110, 88, 0.42)`,
+        background: 'rgba(255, 255, 255, 0.28)',
         color: INK,
-        font: '600 13px/1 system-ui, sans-serif',
+        font: '600 12px/1 system-ui, sans-serif',
       }}
     >
       {label ?? ''}
@@ -51,7 +54,7 @@ function Slash() {
   return (
     <span
       style={{
-        color: 'rgba(244, 242, 234, 0.55)',
+        color: 'rgba(78, 110, 88, 0.55)',
         font: '400 14px/1 system-ui, sans-serif',
         margin: '0 4px',
       }}
@@ -80,8 +83,8 @@ function WhistleGlyph({ size = 30 }: { size?: number }) {
 function JoystickGlyph({ size = 34 }: { size?: number }) {
   return (
     <svg viewBox="0 0 36 36" width={size} height={size} style={{ display: 'block' }}>
-      <circle cx="18" cy="18" r="15" fill="none" stroke="rgba(244,242,234,0.45)" strokeWidth="1.5" />
-      <circle cx="18" cy="18" r="9" fill="none" stroke="rgba(244,242,234,0.7)" strokeWidth="1.5" />
+      <circle cx="18" cy="18" r="15" fill="none" stroke="rgba(78,110,88,0.45)" strokeWidth="1.5" />
+      <circle cx="18" cy="18" r="9" fill="none" stroke="rgba(78,110,88,0.7)" strokeWidth="1.5" />
       <circle cx="21" cy="15" r="4.5" fill={INK} />
     </svg>
   )
@@ -144,16 +147,19 @@ export function Legend() {
         left: '50%',
         bottom: '20%',
         transform: 'translateX(-50%)',
-        padding: coarse ? '18px 26px' : '18px 28px',
-        borderRadius: 14,
-        background: 'rgba(40, 46, 44, 0.42)',
-        backdropFilter: 'blur(6px)',
-        WebkitBackdropFilter: 'blur(6px)',
+        padding: coarse ? '18px 26px' : '16px 26px',
+        borderRadius: 18,
+        // pale on pale: a breath of the sky over the ground, not a dark panel
+        background: 'rgba(244, 242, 234, 0.42)',
+        boxShadow: '0 0 0 1px rgba(78, 110, 88, 0.14), 0 10px 40px rgba(78, 90, 84, 0.10)',
+        backdropFilter: 'blur(10px)',
+        WebkitBackdropFilter: 'blur(10px)',
         display: 'flex',
         flexDirection: 'column',
         gap: 16,
         opacity: state === 'visible' ? 1 : 0,
         transition: 'opacity 0.5s ease',
+        animation: 'tlwh-legend-in 0.9s ease both',
         pointerEvents: 'none',
         zIndex: 6,
       }}

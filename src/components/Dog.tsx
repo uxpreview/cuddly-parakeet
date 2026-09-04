@@ -496,6 +496,26 @@ export function Dog() {
       if (st.nodeIndex < route.nodes.length) {
         const next = route.nodes[st.nodeIndex]
         st.s = Math.max(st.s, next.s0)
+        // A dog who was at heel bolts from where he IS. If the boy walked
+        // thirty metres up the canyon during the opening, the trot path
+        // started back at the spawn, and he teleported there to start it.
+        if (next.node.type === 'trot' && next.s1 > next.s0) {
+          const near = route.project(st.pos, next.s0, next.s1)
+          route.pointAt(near, _tmp)
+          if (_tmp.distanceTo(st.pos) < 6) {
+            st.s = Math.max(st.s, near)
+            // and whatever is left between him and the line becomes a verge
+            // offset that eases out as he goes, never a step onto the line
+            route.directionAt(st.s, _asideDir)
+            _aside.set(_asideDir.z, 0, -_asideDir.x)
+            st.aside = (st.pos.x - _tmp.x) * _aside.x + (st.pos.z - _tmp.z) * _aside.z
+            st.asideSide = 0
+            // Starting from behind the boy he goes PAST him, not through him:
+            // the line he is converging on is the line the boy stands on.
+            if (st.s < player.progress + 1.5)
+              st.aside = Math.sign(st.aside || 1) * Math.max(Math.abs(st.aside), 1.15)
+          }
+        }
         st.sniffPos.copy(next.points[0])
         if (next.node.type === 'trot') st.nextLookBackAt = st.clock + 2
       }
@@ -519,30 +539,90 @@ export function Dog() {
           const at = rn.points[0]
           const idle = n.idle ?? 'stand'
           if (st.phase === 'main') {
-            if (idle === 'sniff') {
+            // Heel: the spot beside and a little behind the boy, on ground he
+            // can stand on. Not companion AI -- one target point, walked to.
+            let heelFar = false
+            let heelX = at.x
+            let heelZ = at.z
+            if (idle === 'heel') {
+              const fx = Math.sin(player.heading)
+              const fz = Math.cos(player.heading)
+              let hx = 0
+              let hz = 0
+              let found = false
+              for (const [side, back] of [
+                [1, 0.3],
+                [-1, 0.3],
+                [0, 1.3],
+              ]) {
+                hx = player.pos.x + fz * 0.95 * side - fx * back
+                hz = player.pos.z - fx * 0.95 * side - fz * back
+                const g = sampleGround(hx, hz, player.pos.y + 0.75)
+                if (g && g.walkable) {
+                  found = true
+                  break
+                }
+              }
+              if (!found) {
+                hx = player.pos.x
+                hz = player.pos.z
+              }
+              heelX = hx
+              heelZ = hz
+              _tmp.set(hx - st.sniffPos.x, 0, hz - st.sniffPos.z)
+              const d = _tmp.length()
+              // He keeps up while the boy walks, and drifts back in when the
+              // boy has wandered more than a couple of metres from him.
+              heelFar = player.speed > 0.2 ? d > 1.1 : d > 2.4
+              if (heelFar) {
+                st.sniffActive = false
+                st.sniffPauseUntil = st.clock + 0.4 + rand() * 0.8
+                const v = THREE.MathUtils.clamp(0.9 + d * 1.1, 0.9, 2.6)
+                desiredHeading = Math.atan2(_tmp.x, _tmp.z)
+                st.sniffPos.addScaledVector(_tmp.normalize(), Math.min(v * dt, d))
+                moveV = v
+                lookTarget = 0
+                headPitchTarget = 0
+              }
+            }
+            if (idle === 'sniff' || (idle === 'heel' && !heelFar)) {
               // slow meander between random points within 2.5 m, nose down
               headPitchTarget = 0.5
+              // the sniff wanders around the node point, or around wherever he
+              // is when he is at heel
+              const cx = idle === 'heel' ? heelX : at.x
+              const cz = idle === 'heel' ? heelZ : at.z
               if (st.clock >= st.sniffPauseUntil) {
                 if (!st.sniffActive) {
                   const ang = rand() * Math.PI * 2
-                  const r = 0.6 + rand() * 1.9
-                  st.sniffTarget.set(at.x + Math.sin(ang) * r, at.y, at.z + Math.cos(ang) * r)
-                  st.sniffActive = true
+                  const r = 0.6 + rand() * (idle === 'heel' ? 1.0 : 1.9)
+                  st.sniffTarget.set(cx + Math.sin(ang) * r, at.y, cz + Math.cos(ang) * r)
+                  const g = sampleGround(st.sniffTarget.x, st.sniffTarget.z, player.pos.y + 0.75)
+                  // on ground, and never through the boy's own legs
+                  const clear =
+                    idle !== 'heel' ||
+                    Math.hypot(st.sniffTarget.x - player.pos.x, st.sniffTarget.z - player.pos.z) > 1.05
+                  if (g && g.walkable && clear) st.sniffActive = true
+                  else st.sniffPauseUntil = st.clock + 0.3
                 }
-                _tmp.subVectors(st.sniffTarget, st.sniffPos)
-                _tmp.y = 0
-                const d = _tmp.length()
-                if (d < 0.08) {
-                  st.sniffActive = false
-                  st.sniffPauseUntil = st.clock + 0.6 + rand() * 1.6
-                } else {
-                  desiredHeading = Math.atan2(_tmp.x, _tmp.z)
-                  st.sniffPos.addScaledVector(_tmp.normalize(), Math.min(0.8 * dt, d))
-                  moveV = 0.8
+                if (st.sniffActive) {
+                  _tmp.subVectors(st.sniffTarget, st.sniffPos)
+                  _tmp.y = 0
+                  const d = _tmp.length()
+                  if (d < 0.08) {
+                    st.sniffActive = false
+                    st.sniffPauseUntil = st.clock + 0.6 + rand() * 1.6
+                  } else {
+                    desiredHeading = Math.atan2(_tmp.x, _tmp.z)
+                    st.sniffPos.addScaledVector(_tmp.normalize(), Math.min(0.8 * dt, d))
+                    moveV = 0.8
+                  }
                 }
               }
-              _pos.copy(st.sniffPos)
               if (glance()) lookTarget = 1
+            }
+            if (idle !== 'stand') {
+              _pos.copy(st.sniffPos)
             } else {
               // stand facing halfway between the route direction and the player
               _pos.copy(at)
@@ -569,7 +649,7 @@ export function Dog() {
             // exit staging: turn to face, then freeze rigid. In chapter 1 this
             // is the stare up-canyon at nothing before the bolt.
             const exit = n.exit
-            _pos.copy(idle === 'sniff' ? st.sniffPos : at)
+            _pos.copy(idle === 'stand' ? at : st.sniffPos)
             if (exit?.face) {
               desiredHeading = Math.atan2(exit.face[0] - _pos.x, exit.face[2] - _pos.z)
             }
@@ -926,7 +1006,12 @@ export function Dog() {
       st.asideSide = asideDir(route, st.s, asideTarget, _aside)
     }
     const asideWant = asideTarget * st.asideSide
-    st.aside += THREE.MathUtils.clamp(asideWant - st.aside, -ASIDE_RATE * dt, ASIDE_RATE * dt)
+    // A metre-plus offset (the bolt from heel) converges faster than the
+    // hazard-wait's sidestep; at trot that is still a diagonal, not a lurch.
+    let asideRate = Math.abs(st.aside - asideWant) > 1.2 ? 1.1 : ASIDE_RATE
+    // and the offset holds until he is clear of the boy
+    if (activity === 'trot' && asideWant === 0 && st.s < player.progress + 2.5) asideRate = 0
+    st.aside += THREE.MathUtils.clamp(asideWant - st.aside, -asideRate * dt, asideRate * dt)
     if (Math.abs(st.aside) < 1e-4) {
       st.aside = 0
       st.asideSide = 0
@@ -1028,7 +1113,13 @@ export function Dog() {
       // planner is told to hold rather than to plan for feet it does not own.
       frozen || sitting,
     )
-    if (!sitting && !frozen) {
+    // A dog nosing about in a wait lays no trail. His feet come down over and
+    // over inside the same metre, the print decals multiply, and a stack of
+    // them is a black hole in the ground (the same fault the near-miss hold
+    // had). The trail exists to be followed; he lays it when he is going
+    // somewhere.
+    const laying = activity !== 'wait' || st.animSpeed > 0.95
+    if (!sitting && !frozen && laying) {
       // The FORE feet only. A trotting dog direct-registers: the hind foot lands
       // in the print the fore foot just made, so a trot track is two visible
       // prints per stride cycle, not four.

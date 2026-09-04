@@ -314,7 +314,11 @@ const stareI = legAt('bank1', 0.8) // the bolt stare aims up-canyon at nothing
 const manifest = {
   id: 'ch01-canyon',
   title: 'The Canyon',
-  spawn: { position: pos(spawnI, 0.02), facing: round((S(spawnI).h * 180) / Math.PI) },
+  // `facing` is a three.js yaw: 0 looks down +z, 90 down +x. The builder's own
+  // heading is the other convention (0 = +x), so it is converted here. Unconverted,
+  // the chapter opened with the boy facing sideways across the river at the far
+  // bank instead of up the canyon he is about to spend eight minutes in.
+  spawn: { position: pos(spawnI, 0.02), facing: round(90 - (S(spawnI).h * 180) / Math.PI) },
   gait: { from: 'light', to: 'light' },
   lighting: {
     states: [
@@ -348,7 +352,11 @@ const manifest = {
       at: pos(heelI),
       until: { time: 30 },
       exit: { face: pos(stareI), hold: 1.5 },
-      idle: 'sniff',
+      // At heel: story.md's thirty seconds of ordinary are "walking, the dog
+      // trotting at heel". A dog sniffing in a circle at the spawn while the
+      // boy walks off up the canyon is neither, and the bolt then happened
+      // behind the player's back.
+      idle: 'heel',
     },
     // Trot speeds, and they are not free numbers: a 0.5 m dog covers 0.62 m a
     // stride, so 2.6 m/s is 4.2 stride cycles a second and 2.2 is 3.55, which
@@ -421,7 +429,7 @@ const manifest = {
     })(),
   ],
   map: { shown: true, landmarks: ['swimming-hole', 'ford', 'fallen-pine', 'rim-view'] },
-  audio: { bed: '', barkSet: '' },
+  audio: { bed: 'synth:canyon-morning', barkSet: 'synth:dog' },
   exit: { trigger: 'rim-gate', next: 'ch02-old-town' },
 }
 

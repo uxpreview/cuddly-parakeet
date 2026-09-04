@@ -5,9 +5,20 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>The Long Way Home</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- Loaded without blocking first paint: the card draws in the fallback
+         serif and takes the face when it arrives. -->
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT@9..144,400..600,100&display=swap"
+      media="print"
+      onload="this.media='all'"
+    />
     <style>
       html, body, #root { margin: 0; height: 100%; overflow: hidden; }
       body { background: #cfe3e0; }
+      @keyframes tlwh-legend-in { from { opacity: 0; transform: translate(-50%, 6px); } to { opacity: 1; transform: translate(-50%, 0); } }
     </style>
   </head>
   <body>

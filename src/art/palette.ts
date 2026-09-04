@@ -130,12 +130,12 @@ export const RED_WHITELIST = [DOG.collar.id, MAP.routeLine.id] as const
  * values appear at full strength.
  */
 export const SHADOW_MIX = {
-  limestone: 1.0,
+  limestone: 0.8,
   // Ground goes further toward the shadow key than anything else except
   // limestone itself. Pale limestone dust in shade really does go cool grey,
   // and the canyon floor is the largest surface in every frame: if its shade
   // value is close to its lit value there is no shadow in the picture at all.
-  ground: 0.44,
+  ground: 0.36,
   // Pine is one of only five hexes Chapter 1 owns and it was measuring five
   // times too desaturated. Foliage keeps nearly all of its own colour in shade.
   foliage: 0.12,
