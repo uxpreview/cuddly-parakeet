@@ -63,29 +63,26 @@ function Scene({
       },
       samples,
       // Stage the subjects in the light. See shots.ts: two thirds of this floor
-      // is lit and the dog was standing in the other third in every shot.
-      (x, y, z) => terrain.sunOcclusionAt(x, y, z),
+      // is lit and the dog was standing in the other third in every shot. The
+      // ford is the exception and stands where it is told: that reach is wholly
+      // in terrain shadow, so a search for light there only walks the actors out
+      // of the beat the shot exists for.
+      shot === 'ford' ? undefined : (x, y, z) => terrain.sunOcclusionAt(x, y, z),
       // The rim and the ford are named places: the reveal camera is the
       // manifest's own, and a ford shot staged thirty metres downstream of the
       // ford is a picture of a river. Only the open canyon staging roams.
       shot === 'town-reveal' || shot === 'ford' ? 7 : 40,
-      (x, y, z) => terrain.skyViewAt(x, y, z),
+      shot === 'ford' ? undefined : (x, y, z) => terrain.skyViewAt(x, y, z),
     )
-    const shots = buildShots(
-      world.art,
-      buildStage(
-        world.art,
-        (x, z) => {
-          const g = terrain.groundAt(x, z)
-          return g === null ? null : { y: g }
-        },
-        STAGE_SAMPLES,
-        (x, y, z) => terrain.sunOcclusionAt(x, y, z),
-        34,
-        (x, y, z) => terrain.skyViewAt(x, y, z),
-      ),
-      world.manifest.cameras,
-    )
+    // The SAME stage the scene renders, not a second one built beside it.
+    //
+    // The shot list used to be built from its own `buildStage` call while the
+    // scene rendered another, so every camera was composed around a dog who was
+    // somewhere else: `vista` and `prints` came back with the collar at one and
+    // four pixels because the frame had been aimed at a position nothing was
+    // standing in. Only one shot renders at a time, so there is no reason for
+    // two.
+    const shots = buildShots(world.art, stage, world.manifest.cameras)
 
     const group = new THREE.Group()
     group.add(art.group)
@@ -137,7 +134,7 @@ function Scene({
     const boyTrail = makePrintTrail(stage.boyPrints, 'boy')
     if (boyTrail) group.add(boyTrail)
 
-    return { group, shots, art }
+    return { group, shots, art, stage }
   }, [terrain, shot, dogPose])
 
   useEffect(() => {
@@ -169,6 +166,7 @@ function Scene({
     ;(window as unknown as Record<string, unknown>).__artShot = s
     ;(window as unknown as Record<string, unknown>).__gl = gl
     ;(window as unknown as Record<string, unknown>).__cam = cam
+    ;(window as unknown as Record<string, unknown>).__artCenterline = world.art?.centerline
   }, [built, shot, camera, gl])
 
   if (!built) return null

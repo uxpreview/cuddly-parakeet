@@ -3,6 +3,7 @@ import type { ArtTerrain } from '../art/artTerrain'
 import { BlockIndex } from './terrain'
 import { Route, ProgressTracker } from './route'
 import { world } from './world'
+import { now } from './clock'
 
 const BASE = '/chapters/'
 
@@ -46,6 +47,7 @@ export async function loadChapter(id: string): Promise<void> {
 
   const [sx, sy, sz] = manifest.spawn.position
   world.player.pos.set(sx, sy, sz)
+  world.player.visualY = sy
   world.player.heading = (manifest.spawn.facing * Math.PI) / 180
   world.player.tracker = new ProgressTracker(world.route)
   world.dog.nodeIndex = 0
@@ -53,6 +55,6 @@ export async function loadChapter(id: string): Promise<void> {
   const first = world.route.nodes[0]
   world.dog.pos.copy(first.points[0])
   world.dog.s = first.s0
-  world.startedAt = performance.now()
+  world.startedAt = now()
   world.ready = true
 }

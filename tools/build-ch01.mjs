@@ -181,6 +181,7 @@ function pillar(px, pz, baseY, height, seed) {
   }
 }
 
+// eslint-disable-next-line no-unused-vars
 function anchorFordLevel() {
   // constant water level through the ford dip
   const i = anchors['ford-near']
@@ -349,17 +350,22 @@ const manifest = {
       exit: { face: pos(stareI), hold: 1.5 },
       idle: 'sniff',
     },
-    { type: 'trot', path: 'paths/dog-ch1-a.json', speed: 3.0 },
+    // Trot speeds, and they are not free numbers: a 0.5 m dog covers 0.62 m a
+    // stride, so 2.6 m/s is 4.2 stride cycles a second and 2.2 is 3.55, which
+    // is where a real trot sits. Story rule 4 says trotting, never running, and
+    // the cadence is where that either reads or does not. The bolt keeps a
+    // little more urgency than the rest of the chapter.
+    { type: 'trot', path: 'paths/dog-ch1-a.json', speed: 2.4 },
     { type: 'hazard-wait', at: pos(hazard1I), safetyTrigger: 'ford-crossed' },
-    { type: 'trot', path: 'paths/dog-ch1-b.json', speed: 2.6 },
+    { type: 'trot', path: 'paths/dog-ch1-b.json', speed: 2.2 },
     { type: 'look-back', at: pos(barLookI), variant: 'auto' },
-    { type: 'trot', path: 'paths/dog-ch1-c.json', speed: 2.6 },
+    { type: 'trot', path: 'paths/dog-ch1-c.json', speed: 2.2 },
     { type: 'wait', at: pos(ledgeBottomI), until: { proximity: 26 }, idle: 'stand' },
-    { type: 'trot', path: 'paths/dog-ch1-d.json', speed: 2.6 },
+    { type: 'trot', path: 'paths/dog-ch1-d.json', speed: 2.2 },
     { type: 'hazard-wait', at: pos(hazard2I), safetyTrigger: 'log-crossed' },
-    { type: 'trot', path: 'paths/dog-ch1-e.json', speed: 2.6 },
+    { type: 'trot', path: 'paths/dog-ch1-e.json', speed: 2.2 },
     { type: 'wait', at: pos(rimWaitI), until: { proximity: 18 }, idle: 'stand' },
-    { type: 'trot', path: 'paths/dog-ch1-f.json', speed: 2.6 },
+    { type: 'trot', path: 'paths/dog-ch1-f.json', speed: 2.2 },
     {
       type: 'near-miss',
       at: pos(nearMissI),
@@ -477,43 +483,64 @@ function wallSide(W, surf, top = 1) {
 // one bank lower than the other, and a slot with full-height walls both sides
 // puts the whole floor in shade all morning, which would mean the documented
 // path value never once appears on screen.
-function waterSide(W, surf) {
+function waterSide(W, surf, top = 1) {
+  const T = (v) => v * top
   return [
     P(W, 0.1, surf, 0.08, 'edge'),
     P(W + 0.55, -0.3, 'wetstone', 0.12, 'bank'),
-    P(W + 1.15, -0.95, 'wetstone', 0.1, 'waterline'),
-    P(W + 8.4, -1.15, 'wetstone', 0.16, 'bed'),
+    P(W + 1.15, -0.85, 'wetstone', 0.1, 'waterline'),
+    // The bed, at -1.65 rather than -1.15.
+    //
+    // The water surface is fitted to where the level crosses the bank, so the
+    // bed IS the depth, and 20 cm of it made the river a sheet: measured across
+    // samples 84 to 118 the deepest point in the channel was 0.14 to 0.26 m,
+    // and "depth told by hue" then has one hue to tell it with — the shallow
+    // tint everywhere and the documented #4E8F86 nowhere. At 0.8 m the shore
+    // band, the river value and the deep channel all appear.
+    P(W + 8.4, -1.65, 'wetstone', 0.16, 'bed'),
     P(W + 9.5, 0.1, 'sand', 0.22, 'farbank'),
+    // The near terrace keeps its mass whatever `top` says: it is what the hero
+    // frame's far bank IS, and a 7 m terrace 15 m out throws its shadow twelve
+    // metres, which lands on its own foot. Only the high rim above it is
+    // lowered, because a 21 m rim 26 m out throws thirty-six and that is what
+    // buries the floor.
     P(W + 11.2, 2.4, 'scree', 0.45, 'talus'),
     P(W + 12.6, 6.0, 'limestone', 0.55),
     P(W + 14.8, 7.2, 'scrub', 0.7, 'terrace'),
-    P(W + 20.0, 11.2, 'limestone', 0.8),
-    P(W + 23.4, 17.0, 'limestone', 0.9),
-    P(W + 26.4, 21.0, 'limestone', 1.0, 'rim'),
-    P(W + 34.0, 22.0, 'scrub', 1.8, 'plateau'),
-    P(W + 52.0, 20.0, 'scrub', 2.8, 'plateau'),
+    P(W + 20.0, T(11.2), 'limestone', 0.8),
+    P(W + 23.4, T(17.0), 'limestone', 0.9),
+    P(W + 26.4, T(21.0), 'limestone', 1.0, 'rim'),
+    P(W + 34.0, T(22.0), 'scrub', 1.8, 'plateau'),
+    P(W + 52.0, T(20.0), 'scrub', 2.8, 'plateau'),
   ]
 }
 
 // The crossing: the river runs across the path, so the near bank is a shallow
 // gravel shelf and the floor simply continues into the water.
-function fordSide(W, surf) {
+function fordSide(W, surf, top = 1) {
+  const T = (v) => v * top
   return [
-    P(W, -0.14, surf, 0.05, 'edge'),
-    // a damp band above the waterline: art-direction.md asks for soft contact
-    // darkening where things meet ground, and a shoreline is the clearest case
-    P(W + 0.5, -0.3, 'wetstone', 0.08, 'bank'),
-    P(W + 0.95, -0.6, 'wetstone', 0.1, 'waterline'),
-    P(W + 6.6, -0.9, 'wetstone', 0.16, 'bed'),
-    P(W + 8.0, 0.3, 'sand', 0.22, 'farbank'),
+    // A ford's cross-section has NO RIDGE in it.
+    //
+    // It used to start the side profile at -0.14 while the crossing's own bed
+    // was 0.9 m lower, which puts a bank between the trail and the river: the
+    // water then found the channels either side and stopped at that ridge, so
+    // the crossing itself was dry and the boy stood on top of the river in the
+    // middle of it. From the trail bed the ground falls into the channel and
+    // rises on the far side, once, and the water covers all of it.
+    P(W, -1.0, surf, 0.05, 'edge'),
+    P(W + 0.7, -1.18, 'wetstone', 0.08, 'bank'),
+    P(W + 1.8, -1.22, 'wetstone', 0.1, 'waterline'),
+    P(W + 2.9, 0.15, 'sand', 0.16, 'bed'),
+    P(W + 4.2, 0.6, 'sand', 0.22, 'farbank'),
     P(W + 9.8, 2.4, 'scree', 0.45, 'talus'),
     P(W + 11.4, 6.0, 'limestone', 0.55),
     P(W + 14.8, 7.2, 'scrub', 0.7, 'terrace'),
-    P(W + 20.0, 11.2, 'limestone', 0.8),
-    P(W + 23.4, 17.0, 'limestone', 0.9),
-    P(W + 26.4, 21.0, 'limestone', 1.0, 'rim'),
-    P(W + 34.0, 22.0, 'scrub', 1.8, 'plateau'),
-    P(W + 52.0, 20.0, 'scrub', 2.8, 'plateau'),
+    P(W + 20.0, T(11.2), 'limestone', 0.8),
+    P(W + 23.4, T(17.0), 'limestone', 0.9),
+    P(W + 26.4, T(21.0), 'limestone', 1.0, 'rim'),
+    P(W + 34.0, T(22.0), 'scrub', 1.8, 'plateau'),
+    P(W + 52.0, T(20.0), 'scrub', 2.8, 'plateau'),
   ]
 }
 
@@ -590,7 +617,30 @@ function logSide(W, surf) {
   return out
 }
 
-const wallTop = { narrows: 1.2, 'ledge-approach': 1.15, ledge: 1.12, bowl: 0.85, bowl2: 0.88, hole: 0.92 }
+// How tall each leg's sides stand, as a multiplier on the cross-section.
+//
+// The ford reach is the one place this is doing structural work rather than
+// shaping. Measured, samples 89 to 125 had ZERO percent of their walked floor
+// in the key light — a 56 m unbroken shaded run with no terminator anywhere in
+// it, which is why the Gate 1 verdict said the reach reads as underexposure
+// rather than as shade. It is a geometry problem and not a light one: at this
+// chapter's sun the shadow is thrown almost straight down the canyon's own
+// axis, so no side wall is to blame and moving the sun would cost D20's whole
+// argument. Opening the reach out is what lets the terminator fall across it.
+const wallTop = {
+  narrows: 1.2,
+  'ledge-approach': 1.15,
+  ledge: 1.12,
+  bowl: 0.85,
+  bowl2: 0.88,
+  hole: 0.92,
+  bank3: 0.78,
+  bank4: 0.5,
+  'ford-in': 0.38,
+  'ford-out': 0.38,
+  bank5: 0.5,
+  bank6: 0.85,
+}
 
 const artLegs = []
 for (const leg of legs) {
@@ -598,7 +648,7 @@ for (const leg of legs) {
   const top = wallTop[leg.name] ?? 1
   const side = (kind) => {
     if (leg.name === 'log') return logSide(W, leg.surface)
-    if (leg.ford) return fordSide(W, leg.surface)
+    if (leg.ford) return fordSide(W, leg.surface, top)
     switch (kind) {
       case 'wall':
         return wallSide(W, leg.surface, top)
@@ -607,7 +657,7 @@ for (const leg of legs) {
       case 'parapet':
         return parapetSide(W, leg.surface)
       case 'water':
-        return waterSide(W, leg.surface)
+        return waterSide(W, leg.surface, top)
       default:
         return fallAwaySide(W, leg.surface)
     }
@@ -630,7 +680,14 @@ for (const leg of legs) {
   // Deep enough that the whole crossing is under water even where the profile
   // blends back into the banks either side: a bed that surfaces mid-ford leaves
   // the water plane cutting a spiky outline through the path.
-  const bed = leg.ford ? -0.52 : 0
+  // The crossing is a dip you WADE, and the depth of it follows from one
+  // number: the river's surface sits 0.85 m under the bank top everywhere, so a
+  // trail bed at -1.05 is 20 cm of water across the whole ford rather than a
+  // trail that surfaces in the middle of it. It used to be -0.52, which put the
+  // path above the water at every sample but the two lowest — the crossing
+  // existed for three metres of a twelve-metre ford, and the boy stood dry on
+  // top of the river for the rest of it.
+  const bed = leg.ford ? -1.05 : 0
   const chain = []
   for (let i = leftHalf.length - 1; i >= 1; i--) {
     const p = leftHalf[i]
@@ -662,11 +719,16 @@ const chainIndex = (legName, tag, nth = 0) => {
 // steps at every leg boundary and the reaches shear through each other, which
 // is exactly what a river must never do.
 
+// ONE rule for the whole river: the surface sits 0.85 m below the bank top it
+// cut, except under the log where the channel is deep. The ford used to hold
+// its own constant level taken from an anchor, which meant the crossing's water
+// and the reaches either side of it were two different surfaces that had to be
+// smoothed into each other over four samples — and where the smoothing landed
+// was where the polygon tore.
 const rawLevel = samples.map((s) => {
   const leg = legByName[s.leg]
   if (leg.deepWater) return s.y - 1.6
-  if (leg.ford) return S(anchors['ford-near']).y - 0.34
-  return s.y - 0.95
+  return s.y - 0.85
 })
 const waterLevel = rawLevel.map((_, i) => {
   let sum = 0
@@ -683,69 +745,50 @@ const waterLevel = rawLevel.map((_, i) => {
   return round(sum / n)
 })
 
+// Reaches are CONTIGUOUS RUNS of samples that have water, and nothing more.
+// Where the shoreline is, how wide the river is and how deep it runs are not
+// stated here at all: the engine finds the line where the water level crosses
+// the bank it lofted, per sample, and colours the surface by how deep the bed
+// is under it.
+//
+// They used to be expressed as fractional cross-section RUNG indices, one
+// reach per waterline tag per leg. Two things went wrong with that and both
+// show in `ford-desktop`. A rung index means a different place in a leg with a
+// different profile, so the one-sample overlap into each neighbour — added to
+// stop a reach's edge hanging in mid-air — drew the ford's bank-to-bank
+// crossing across bank4's cross-section, where rung 20 is halfway up a cliff:
+// that is the straight cut across the channel. And a shoreline pinned to a rung
+// while the rung itself wanders with the bank jitter cuts a sawtooth into the
+// bank instead of following it.
 const waters = []
-for (const leg of legs) {
-  const [a, b] = legRange[leg.name]
-  const chain = artLegs.find((l) => l.name === leg.name).chain
-  const levels = []
-  for (let i = a; i <= b; i++) levels.push(waterLevel[i])
-  // Reaches are expressed as fractional CROSS-SECTION RUNG indices, not as
-  // lateral offsets. The banks wander per sample, so a reach at a fixed offset
-  // cuts a ragged edge through them; a reach anchored to the waterline rung has
-  // its shoreline exactly where the bank is, every sample, for free.
-  const reach = (fromK, toK, material, opacity = 1) => {
-    if (Math.abs(toK - fromK) < 1e-3) return
-    waters.push({
-      range: [a, b],
-      fromK: round(Math.min(fromK, toK)),
-      toK: round(Math.max(fromK, toK)),
-      material,
-      opacity,
-      levels,
-    })
+{
+  const hasWater = (leg) => leg.ford || leg.deepWater || leg.left === 'water' || leg.right === 'water'
+  const material = (leg) => (leg.deepWater ? 'riverDeep' : 'river')
+  let run = null
+  const flush = () => {
+    if (!run) return
+    const levels = []
+    for (let i = run.a; i <= run.b; i++) levels.push(waterLevel[i])
+    waters.push({ range: [run.a, run.b], material: run.material, opacity: run.opacity, levels })
+    run = null
   }
-  const tagIdx = (tag) => {
-    const hits = []
-    chain.forEach((p, i) => {
-      if (p.t === tag) hits.push(i)
-    })
-    return hits
-  }
-  const wl = tagIdx('waterline')
-  if (leg.ford) {
-    // the crossing: shallow water running right across the path, bank to bank,
-    // with the gravel bed readable through it
-    // One water material. The crossing was rendering entirely in the shallow
-    // tint while the reach upstream of it rendered the documented hex, so the
-    // same river arrived at the ford as two different colours with a visible
-    // seam between them. The shallows are a rim at each bank, not the whole
-    // crossing.
-    if (wl.length === 2) {
-      const lo = Math.min(wl[0], wl[1])
-      const hi = Math.max(wl[0], wl[1])
-      reach(lo, lo + 0.8, 'riverShallow', 0.8)
-      reach(lo + 0.8, hi - 0.8, 'river', 0.8)
-      reach(hi - 0.8, hi, 'riverShallow', 0.8)
+  for (const leg of legs) {
+    const [a, b] = legRange[leg.name]
+    if (!hasWater(leg)) {
+      flush()
+      continue
     }
-    continue
+    // The crossing is shallow enough to read the gravel through; the reaches
+    // either side are not. That is the only thing opacity says here.
+    const opacity = leg.ford ? 0.85 : 1
+    const mat = material(leg)
+    if (run && run.material === mat && run.opacity === opacity && run.b === a) run.b = b
+    else {
+      flush()
+      run = { a, b, material: mat, opacity }
+    }
   }
-  if (leg.deepWater) {
-    reach(0, chain.length - 1, 'riverDeep')
-    continue
-  }
-  const bedIdx = tagIdx('bed')
-  for (let n = 0; n < wl.length; n++) {
-    const k0 = wl[n]
-    const k1 = bedIdx[n] ?? (k0 < chain.length / 2 ? k0 - 1 : k0 + 1)
-    // Depth told by hue: a lighter band over the gravel at each shore, the
-    // documented river value through the middle. That, and nothing else, is
-    // what water is allowed to do here.
-    const lo = Math.min(k0, k1)
-    const hi = Math.max(k0, k1)
-    reach(lo, lo + 0.22, 'riverShallow')
-    reach(lo + 0.22, hi - 0.22, 'river')
-    reach(hi - 0.22, hi, 'riverShallow')
-  }
+  flush()
 }
 
 // ---- scatter --------------------------------------------------------------

@@ -1,21 +1,48 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { input } from '../game/input'
 import { useGame } from '../game/store'
-import { world, sampleGround, updateTriggers, isDev } from '../game/world'
+import { world, sampleGround, artGround, updateTriggers, isDev } from '../game/world'
+import { pushPrint } from '../game/trail'
+import { recFrame } from '../game/record'
+import { isRecording } from '../game/clock'
+import { buildBoyRig, boyRest, BOY_GAIT } from '../art/characters'
+import { BOY_JOINTS } from '../art/rig'
+import { Gait, solveChain, setWorldQuaternion, type Chain } from '../game/gait'
 
-// The boy. Grey-box mesh, authored walking pace, camera-relative input,
-// analytic ground collision with wall slide. Walking is the only locomotion:
-// no run, no jump, no player-controlled pace.
+// The boy. Authored walking pace, camera-relative input, analytic ground
+// collision with wall slide. Walking is the only locomotion: no run, no jump,
+// no player-controlled pace.
+//
+// The mesh is the art bible's boy, rigged — the Gate 1 grey box is gone. What
+// drives it is a footfall plan, not a limb angle: each foot is put down at a
+// world position, held while he passes over it, and picked up again, so the
+// contact point cannot slide. See src/game/gait.ts.
 
-const WALK_SPEED = 1.6 // m/s, authored. Never player-adjustable.
+// 1.15 m/s, authored, never player-adjustable.
+//
+// It was 1.6, chosen at Gate 1 against a grey box with no gait in it. A 1.17 m
+// boy with a 0.43 m leg covers 0.75 m a stride; 1.6 m/s is then 256 steps a
+// minute, which is not a walk at any size. 1.15 puts him at 184, and it puts
+// the chapter's 595 m of route at 8.6 minutes against the ~8 the story bible
+// asks for — closer than 1.6's 6.2. game-design.md names no number for this.
+/**
+ * How much of the arm swing is lateral rather than fore-aft. See the note at
+ * the swing itself: the fore-aft component runs down the camera's depth axis
+ * and is nearly invisible from behind, which is where this game's camera lives.
+ */
+const ARM_LATERAL = 0.34
+
+const WALK_SPEED = 1.15
 const ACCEL = 8 // m/s^2 toward intent
-const DECEL = 12 // m/s^2 when settling
+// 4.5 m/s^2, which takes him 0.26 s and 15 cm to stop from a walk. It was 12,
+// which is 0.10 s and 3 cm — a body that stops in a tenth of a second did not
+// have any weight in it to begin with, and the gate asks for stopping to settle.
+const DECEL = 4.5
 const TURN_RATE = 10 // rad/s heading damping
 const STEP_LIMIT = 0.5 // max walkable step height
 const SAMPLE_ABOVE = 1.2 // sample ground from this far above the feet
-const STRIDE_FREQ = 5.5 // rad of walk phase per meter walked
 
 const _fwd = new THREE.Vector3()
 const _right = new THREE.Vector3()
@@ -23,6 +50,12 @@ const _target = new THREE.Vector3()
 const _diff = new THREE.Vector3()
 const _tp = new THREE.Vector3()
 const _up = new THREE.Vector3(0, 1, 0)
+const _foot = new THREE.Vector3()
+const _hip = new THREE.Vector3()
+const _q = new THREE.Quaternion()
+const _fwdWorld = new THREE.Vector3()
+const _hand = new THREE.Vector3()
+const _handTip = new THREE.Vector3()
 
 function wrapAngle(a: number): number {
   return Math.atan2(Math.sin(a), Math.cos(a))
@@ -30,53 +63,111 @@ function wrapAngle(a: number): number {
 
 export function Player() {
   const camera = useThree((s) => s.camera)
-  const rootRef = useRef<THREE.Group>(null)
-  const bodyRef = useRef<THREE.Group>(null)
-  const legLRef = useRef<THREE.Group>(null)
-  const legRRef = useRef<THREE.Group>(null)
-  const armLRef = useRef<THREE.Group>(null)
-  const armRRef = useRef<THREE.Group>(null)
+  const holder = useRef<THREE.Group>(null)
 
-  const velRef = useRef(new THREE.Vector3())
-  const walkPhaseRef = useRef(0)
-  const meshYRef = useRef<number | null>(null)
-  const debugFastRef = useRef(false)
+  const rig = useMemo(() => buildBoyRig(), [])
+  const rest = useMemo(() => boyRest(), [])
+  const gait = useMemo(() => new Gait(BOY_GAIT), [])
+  const chains = useMemo<Chain[]>(
+    () =>
+      (['L', 'R'] as const).map((s) => ({
+        root: rig.joints['hip' + s],
+        mid: rig.joints['knee' + s],
+        l1: rest['hip' + s].pos.distanceTo(rest['knee' + s].pos),
+        l2: rest['knee' + s].pos.distanceTo(rest['ankle' + s].pos),
+        restDir2: new THREE.Vector3(0, -1, 0),
+        // A knee bends forward. It is the only joint on him that has an opinion.
+        pole: 1,
+      })),
+    [rig, rest],
+  )
+  /** How high the ankle sits when the sole is flat. Measured off the skeleton. */
+  const ankleLift = useMemo(() => rest.ankleL.pos.y, [rest])
+  const legReach = useMemo(() => chains.map((c) => c.l1 + c.l2), [chains])
+  const hipY = useMemo(() => [rest.hipL.pos.y, rest.hipR.pos.y], [rest])
+  // Dev-only: tools/dev/legroom.mjs reads this. How much the knee can bend at
+  // rest is the margin the whole support solve has to work in.
+  if (typeof window !== 'undefined')
+    (window as unknown as Record<string, unknown>).__legroom = {
+      hipY: hipY[0],
+      legReach: legReach[0],
+      ankleLift,
+      standingSlack: +(legReach[0] + ankleLift - hipY[0]).toFixed(4),
+    }
+
+  const vel = useRef(new THREE.Vector3()).current
+  const st = useRef({
+    meshY: null as number | null,
+    debugFast: false,
+    // the settle: a small spring the deceleration kicks, and the lean it unwinds
+    dip: 0,
+    dipV: 0,
+    lean: 0,
+    lastSpeed: 0,
+    lastHeading: 0,
+    stillFor: 0,
+    breath: 0,
+    armPhase: 0,
+    // the whistle gesture: hand to mouth, head back, a beat, and down again
+    lastPressSeq: 0,
+    whistleAt: -100,
+  }).current
 
   // Dev-only helpers: number keys teleport along the route, 0 toggles a x4
   // debug speed. The effect body never runs outside dev, so no listener even
-  // exists in a non-dev build.
+  // exists in a non-dev build. The teleport goes through
+  // `world.player.teleportTo` because the velocity, the footfall plan and the
+  // mesh's height smoothing all have to be reset with it.
   useEffect(() => {
     if (!isDev) return
     const onKey = (e: KeyboardEvent) => {
       if (e.repeat) return
       if (e.code === 'Digit0') {
-        debugFastRef.current = !debugFastRef.current
+        st.debugFast = !st.debugFast
         return
       }
       const m = /^Digit([1-9])$/.exec(e.code)
-      if (!m) return
-      const route = world.route
-      const tracker = world.player.tracker
-      if (!route || !tracker) return
-      const s = (route.total * Number(m[1])) / 10
-      route.pointAt(s, _tp)
-      const g = sampleGround(_tp.x, _tp.z, _tp.y + 2)
-      world.player.pos.set(_tp.x, g ? g.y : _tp.y, _tp.z)
-      tracker.s = s
-      world.player.progress = s
-      velRef.current.set(0, 0, 0)
-      meshYRef.current = null // resnap the mesh, no slow settle across the map
+      if (!m || !world.route) return
+      world.player.teleportTo = (world.route.total * Number(m[1])) / 10
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  }, [st])
 
   useFrame((_, delta) => {
     if (!world.ready || !world.manifest) return
     const dt = Math.min(delta, 0.05)
     const ended = useGame.getState().phase === 'ended'
     const pos = world.player.pos
-    const vel = velRef.current
+
+    // Characters stand on the ART surface where there is one, not on the
+    // collision blocks. The two agree almost everywhere; where they
+    // deliberately do not — the ford bed sits below its collision slab so the
+    // crossing is under water — standing on the collision height is what put
+    // the boy dry on top of the river.
+    const groundFn = (x: number, z: number, fromY: number) => {
+      const a = artGround(x, z)
+      if (a !== null) return a
+      const g = sampleGround(x, z, fromY)
+      return g ? g.y : fromY
+    }
+
+    // --- staging teleport (dev / recording harness) --------------------------
+    if (world.player.teleportTo >= 0 && world.route && world.player.tracker) {
+      const s = world.player.teleportTo
+      world.player.teleportTo = -1
+      world.route.pointAt(s, _tp)
+      const g = sampleGround(_tp.x, _tp.z, _tp.y + 2)
+      pos.set(_tp.x, g ? g.y : _tp.y, _tp.z)
+      world.player.tracker.s = s
+      world.player.progress = s
+      world.route.directionAt(s, _tp)
+      world.player.heading = Math.atan2(_tp.x, _tp.z)
+      vel.set(0, 0, 0)
+      st.meshY = null // resnap the mesh, no slow settle across the map
+      gait.reset(pos, world.player.heading, groundFn)
+      recFrame.staged = 1
+    } else recFrame.staged = 0
 
     // --- intent, camera-relative --------------------------------------------
     const mx = ended ? 0 : input.move.x
@@ -86,7 +177,7 @@ export function Player() {
     if (_fwd.lengthSq() < 1e-6) _fwd.set(0, 0, -1)
     _fwd.normalize()
     _right.crossVectors(_fwd, _up) // right = fwd x up (fwd is horizontal)
-    const maxSpeed = WALK_SPEED * (isDev && debugFastRef.current ? 4 : 1)
+    const maxSpeed = WALK_SPEED * (isDev && st.debugFast ? 4 : 1)
     _target.set(_right.x * mx + _fwd.x * mz, 0, _right.z * mx + _fwd.z * mz)
     if (_target.lengthSq() > 1) _target.normalize()
     _target.multiplyScalar(maxSpeed)
@@ -152,72 +243,236 @@ export function Player() {
       }
     }
 
-    // --- mesh: position (y visually smoothed), facing, walk cycle -----------
-    const root = rootRef.current
+    const root = holder.current
     if (!root) return
-    if (meshYRef.current === null) meshYRef.current = pos.y
-    meshYRef.current += (pos.y - meshYRef.current) * (1 - Math.exp(-12 * dt))
-    root.position.set(pos.x, meshYRef.current, pos.z)
-    root.rotation.y = world.player.heading
+    const heading = world.player.heading
 
-    const gaitSpeed = Math.min(speed, WALK_SPEED)
-    const f = gaitSpeed / WALK_SPEED // 0..1; scales all gait motion so it settles
-    walkPhaseRef.current += speed * STRIDE_FREQ * dt
-    const ph = walkPhaseRef.current
-    const swing = Math.sin(ph)
-    if (bodyRef.current) {
-      bodyRef.current.position.y = Math.abs(Math.sin(ph)) * 0.035 * f
-      bodyRef.current.rotation.x = 0.06 * f // slight forward lean while walking
-      bodyRef.current.rotation.z = Math.sin(ph) * 0.03 * f
+    // --- the footfall plan ---------------------------------------------------
+    const yawRate = wrapAngle(heading - st.lastHeading) / Math.max(dt, 1e-4)
+    st.lastHeading = heading
+    gait.update(dt, speed, pos, heading, groundFn, yawRate)
+    for (const f of gait.feet) {
+      if (!f.justPlanted) continue
+      // A print is spawned BY the plant, at the foot's own position. That is
+      // what makes "footprints land in step and alternate correctly" a fact
+      // about the animation rather than a claim about it.
+      pushPrint('boy', f.pos.x, f.pos.y, f.pos.z, f.heading)
     }
-    if (legLRef.current) legLRef.current.rotation.x = swing * 0.6 * f
-    if (legRRef.current) legRRef.current.rotation.x = -swing * 0.6 * f
-    if (armLRef.current) armLRef.current.rotation.x = -swing * 0.35 * f
-    if (armRRef.current) armRRef.current.rotation.x = swing * 0.35 * f
+
+    // --- weight ---------------------------------------------------------------
+    // Deceleration kicks a small spring in the pelvis and a lean that unwinds
+    // through it. Stopping is not the walk cycle scaling to zero: a body that
+    // was moving has to put the momentum somewhere.
+    const accel = (speed - st.lastSpeed) / Math.max(dt, 1e-4)
+    st.lastSpeed = speed
+    st.stillFor = speed < 0.05 ? st.stillFor + dt : 0
+    const dipTarget = THREE.MathUtils.clamp(-accel * 0.0075, -0.012, 0.03)
+    st.dipV += (dipTarget - st.dip) * 190 * dt - st.dipV * 13 * dt
+    st.dip += st.dipV * dt
+    // Never negative. A body absorbing its own momentum goes DOWN and comes
+    // back; letting the spring overshoot upward raised him above what his legs
+    // could reach and hung a foot 2 cm in the air for a third of every stance
+    // he stood through.
+    st.dip = THREE.MathUtils.clamp(st.dip, 0, 0.055)
+    // He leans into the walk and unwinds out of it, always a beat behind the feet
+    const leanTarget = 0.055 * Math.min(speed / WALK_SPEED, 1) + accel * 0.006
+    st.lean += (leanTarget - st.lean) * (1 - Math.exp(-7 * dt))
+    st.breath += dt
+
+    // --- place the rig --------------------------------------------------------
+    if (st.meshY === null) st.meshY = pos.y
+    st.meshY += (pos.y - st.meshY) * (1 - Math.exp(-12 * dt))
+
+    // The pelvis rides the planted feet, not the terrain sample: on a slope, or
+    // over a rock, the body follows what he is actually standing on — and it
+    // FALLS as the stride opens, because a leg at full stretch cannot also be a
+    // leg reaching forward. That fall is the walk's bob, at the amplitude his
+    // own leg length implies rather than at one somebody picked.
+    let ceiling = -Infinity
+    for (const f of gait.feet) if (f.planted) ceiling = Math.max(ceiling, f.pos.y)
+    if (ceiling === -Infinity) ceiling = st.meshY
+    const support = gait.supportHeight(
+      pos,
+      heading,
+      hipY,
+      legReach,
+      [ankleLift, ankleLift],
+      ceiling,
+    )
+    // The rig's own rest drop already puts the soles at its origin, so the
+    // group's height IS the ground he is standing on. The dip is the settle.
+    root.position.set(pos.x, 0, pos.z)
+    root.rotation.y = heading
+    rig.group.position.y = support - st.dip
+    world.player.visualY = support
+    recFrame.boyY = {
+      support: +support.toFixed(5),
+      dip: +st.dip.toFixed(5),
+      planted: gait.feet.reduce((a, f) => a + (f.planted ? 1 : 0), 0),
+    }
+    rig.group.updateMatrixWorld(true)
+
+    const pelvis = rig.joints.pelvis
+    const chest = rig.joints.chest
+    const head = rig.joints.head
+    pelvis.rotation.set(st.lean * 0.45, 0, 0)
+    // The pelvis rolls toward the loaded leg and the chest counters it, which is
+    // most of what makes a walk read as weight rather than as legs alternating.
+    const load = gait.feet[0].planted ? 1 : -1
+    const swing = Math.sin(gait.phase * Math.PI * 2)
+    const gaitAmp = Math.min(speed / WALK_SPEED, 1)
+    pelvis.rotation.z = swing * 0.055 * gaitAmp
+    pelvis.rotation.y = -swing * 0.09 * gaitAmp
+    chest.rotation.set(st.lean, swing * 0.05 * gaitAmp, -swing * 0.03 * gaitAmp)
+    void load
+
+    // The head keeps level and looks toward the dog when he is worth looking at.
+    const toDog = Math.atan2(
+      world.dog.pos.x - pos.x,
+      world.dog.pos.z - pos.z,
+    )
+    const dogRel = THREE.MathUtils.clamp(wrapAngle(toDog - heading), -0.9, 0.9)
+    const dogNear = world.dog.visible && pos.distanceTo(world.dog.pos) < 60 ? 1 : 0
+    head.rotation.set(
+      -st.lean * 0.7 + Math.sin(st.breath * 1.7) * 0.008,
+      dogRel * 0.55 * dogNear,
+      0,
+    )
+    rig.group.updateMatrixWorld(true)
+
+    // --- legs: reach for the planted feet ------------------------------------
+    _fwdWorld.set(Math.sin(heading), 0, Math.cos(heading))
+    for (let i = 0; i < 2; i++) {
+      const f = gait.feet[i]
+      _foot.set(f.pos.x, f.pos.y + ankleLift, f.pos.z)
+      solveChain(chains[i], _foot, _fwdWorld)
+      // The shoe stays level with the ground, rolling at heel-strike and
+      // toe-off. A foot that keeps the shin's angle is a hoof.
+      const ankle = rig.joints[i === 0 ? 'ankleL' : 'ankleR']
+      let roll = 0
+      if (f.planted) roll = THREE.MathUtils.lerp(-0.22, 0.3, f.stance) * gaitAmp
+      else roll = -0.12
+      _q.setFromAxisAngle(_up, heading)
+      _q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), roll))
+      setWorldQuaternion(ankle, _q)
+    }
+
+    // --- arms: they swing against the legs, and lag ---------------------------
+    //
+    // The fore-aft swing is about X, which is the camera's DEPTH axis: this
+    // game's camera sits directly behind the boy at 18 degrees, so 0.62 rad of
+    // it moved his arms by one to two pixels across a whole stride. Measured
+    // from the game's own camera he walked with two static sticks.
+    //
+    // So the swing carries a lateral component too. It is not a cheat: an arm
+    // swinging forward comes IN across the body and going back swings OUT, and
+    // that cross-body component is the part a camera behind him can see.
+    const armSwing = -Math.sin(gait.phase * Math.PI * 2 - 0.35) * 0.62 * gaitAmp
+    const armOut = armSwing * ARM_LATERAL
+    const rest2 = rig.rest
+    rig.joints.shoulderL.rotation.set(
+      rest2.shoulderL.x - armSwing,
+      0,
+      rest2.shoulderL.z + armOut,
+    )
+    rig.joints.shoulderR.rotation.set(
+      rest2.shoulderR.x + armSwing,
+      0,
+      rest2.shoulderR.z + armOut,
+    )
+    // The forearm trails the upper arm: an arm swinging as one stick is a
+    // pendulum, and a walking child's elbow is always a little bent.
+    rig.joints.elbowL.rotation.x = -0.32 - Math.max(0, armSwing) * 0.55
+    rig.joints.elbowR.rotation.x = -0.32 - Math.max(0, -armSwing) * 0.55
+
+    // --- the whistle, as a gesture -------------------------------------------
+    // With sound off the press has to read on the BOY. It used to be an
+    // expanding ring drawn on the ground under him, which is a marker on the
+    // player in screen grammar — the one thing game-design.md says the answer
+    // must never be. He puts a hand to his mouth, tips his head back and rises
+    // onto the balls of his feet, which is what a boy whistling looks like.
+    if (world.whistle.pressSeq !== st.lastPressSeq) {
+      st.lastPressSeq = world.whistle.pressSeq
+      st.whistleAt = st.breath
+    }
+    const wt = (st.breath - st.whistleAt) / 0.85
+    if (wt >= 0 && wt <= 1) {
+      // up fast, held, down slow: the shape of drawing breath and letting go
+      const k = wt < 0.22 ? wt / 0.22 : wt < 0.62 ? 1 : 1 - (wt - 0.62) / 0.38
+      const e = k * k * (3 - 2 * k)
+      // The elbow goes OUT, not forward. Raising the arm in front of him puts
+      // the whole gesture behind his own torso from a camera sitting directly
+      // behind him, which is where this game's camera lives: muted, the player
+      // saw a boy nod backwards and nothing else. A hand to the mouth with the
+      // elbow winged out to the side is both what whistling looks like and the
+      // version of it that has a silhouette from behind.
+      rig.joints.shoulderR.rotation.set(
+        rest2.shoulderR.x - 2.25 * e,
+        0.45 * e,
+        rest2.shoulderR.z - 0.75 * e,
+      )
+      rig.joints.elbowR.rotation.x = -0.32 - 1.05 * e
+      rig.joints.elbowR.rotation.z = 0.35 * e
+      // BACK, not forward. This was subtracting, which tips the chin down and
+      // hides the face behind the crown from a camera above and behind him --
+      // so the one confirmation the player gets that their input registered
+      // read as a shrug. Measured alongside it, the hand never came closer than
+      // 29.8 cm to his head, so there was no hand-to-mouth either.
+      head.rotation.x += 0.30 * e
+      chest.rotation.x -= 0.16 * e
+      rig.group.position.y += 0.022 * e
+    }
+
+    // What a camera behind him can see of that: the hands' excursion ACROSS his
+    // body, measured in his own frame rather than argued about.
+    if (isRecording()) {
+      rig.group.updateMatrixWorld(true)
+      // Forward is (sin h, cos h); right of it is (cos h, -sin h). Getting this
+      // backwards reads as a reflection rather than a rotation and mixes the two
+      // axes into each other, which is what it did the first time: the lateral
+      // swing measured 14 mm when the geometry says 48.
+      const ch = Math.cos(heading)
+      const sh = Math.sin(heading)
+      const arm = (name: string) => {
+        rig.joints[name].getWorldPosition(_hand)
+        const dx = _hand.x - pos.x
+        const dz = _hand.z - pos.z
+        return { across: dx * ch - dz * sh, ahead: dx * sh + dz * ch }
+      }
+      const l = arm('elbowL')
+      const r = arm('elbowR')
+      // The HAND, not the elbow: one forearm on down the chain from it.
+      _handTip.set(0, -BOY_JOINTS.foreArm, 0)
+      rig.joints.elbowR.localToWorld(_handTip)
+      rig.joints.head.getWorldPosition(_hand)
+      recFrame.boyArms = {
+        handToHead: +_handTip.distanceTo(_hand).toFixed(4),
+        acrossL: +l.across.toFixed(4),
+        acrossR: +r.across.toFixed(4),
+        aheadL: +l.ahead.toFixed(4),
+        aheadR: +r.ahead.toFixed(4),
+      }
+    }
+
+    // Where the MESH's soles ended up, not where the plan put them. The plan
+    // cannot slide by construction; the thing that CAN is a leg that could not
+    // reach what it was asked for, and only the rig knows about that.
+    rig.group.updateMatrixWorld(true)
+    _hip.setFromMatrixPosition(rig.joints.ankleL.matrixWorld)
+    _foot.setFromMatrixPosition(rig.joints.ankleR.matrixWorld)
+    recFrame.boyFeet = {
+      L: [gait.feet[0].pos.x, gait.feet[0].pos.y, gait.feet[0].pos.z],
+      R: [gait.feet[1].pos.x, gait.feet[1].pos.y, gait.feet[1].pos.z],
+      plantL: gait.feet[0].planted ? 1 : 0,
+      plantR: gait.feet[1].planted ? 1 : 0,
+      soleL: [_hip.x, _hip.y - ankleLift, _hip.z],
+      soleR: [_foot.x, _foot.y - ankleLift, _foot.z],
+    }
   })
 
-  // ~1.15m tall, roughly 3 heads: big sphere head, capsule torso, stub limbs.
-  // Neutral greys only; red belongs to the dog.
   return (
-    <group ref={rootRef}>
-      <group ref={bodyRef}>
-        {/* legs pivot at the hip */}
-        <group ref={legLRef} position={[0.08, 0.34, 0]}>
-          <mesh position={[0, -0.16, 0]}>
-            <boxGeometry args={[0.11, 0.32, 0.12]} />
-            <meshLambertMaterial color="#767676" />
-          </mesh>
-        </group>
-        <group ref={legRRef} position={[-0.08, 0.34, 0]}>
-          <mesh position={[0, -0.16, 0]}>
-            <boxGeometry args={[0.11, 0.32, 0.12]} />
-            <meshLambertMaterial color="#767676" />
-          </mesh>
-        </group>
-        {/* torso */}
-        <mesh position={[0, 0.55, 0]}>
-          <capsuleGeometry args={[0.15, 0.3, 4, 12]} />
-          <meshLambertMaterial color="#8e8e8e" />
-        </mesh>
-        {/* arms pivot at the shoulder */}
-        <group ref={armLRef} position={[0.2, 0.76, 0]}>
-          <mesh position={[0, -0.12, 0]}>
-            <boxGeometry args={[0.07, 0.26, 0.08]} />
-            <meshLambertMaterial color="#8a8a8a" />
-          </mesh>
-        </group>
-        <group ref={armRRef} position={[-0.2, 0.76, 0]}>
-          <mesh position={[0, -0.12, 0]}>
-            <boxGeometry args={[0.07, 0.26, 0.08]} />
-            <meshLambertMaterial color="#8a8a8a" />
-          </mesh>
-        </group>
-        {/* head — big, rounded */}
-        <mesh position={[0, 0.95, 0]}>
-          <sphereGeometry args={[0.2, 16, 12]} />
-          <meshLambertMaterial color="#a4a4a4" />
-        </mesh>
-      </group>
+    <group ref={holder}>
+      <primitive object={rig.group} />
     </group>
   )
 }
