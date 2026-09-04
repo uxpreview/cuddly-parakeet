@@ -785,8 +785,11 @@ export const BOY_GAIT = {
   // 5.9 cm hip dip, which is 5% of his height and is what a walk's vertical
   // oscillation actually is. 0.75 m of stride at 1.15 m/s is 184 steps a
   // minute: fast, and he is chasing his dog.
-  strideLen: 0.75,
-  nominal: 1.15,
+  // 0.88 m of cycle at 1.5 m/s is 1.7 cycles a second, 205 steps a minute:
+  // a child hurrying after a dog. Mid-stance the foot sits 0.264 m from the
+  // hip, which a 0.43 m leg reaches with a 9.6 cm drop, inside maxDip.
+  strideLen: 0.88,
+  nominal: 1.5,
   duty: 0.6,
   lift: 0.055,
   /** Read by the actor when it turns a sole position into an IK target. */

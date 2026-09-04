@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
+import * as THREE from 'three'
 import { loadChapter } from './game/loadChapter'
 import { bindKeyboard, input, setJoystick } from './game/input'
 import { useGame } from './game/store'
@@ -15,6 +16,9 @@ import { PerfProbe, PerfHudOverlay } from './components/PerfHud'
 import { Joystick } from './ui/Joystick'
 import { WhistleButton } from './ui/WhistleButton'
 import { Legend } from './ui/Legend'
+import { ChapterCard } from './ui/ChapterCard'
+import { Motes } from './components/Motes'
+import { AudioSystem } from './components/AudioSystem'
 import { ArtBible } from './art/ArtBible'
 import { installRecorder } from './game/record'
 
@@ -38,7 +42,7 @@ export function App() {
 
 function Game() {
   const phase = useGame((s) => s.phase)
-  const chapterTitle = useGame((s) => s.chapterTitle)
+  const introDone = useGame((s) => s.introDone)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -112,22 +116,44 @@ function Game() {
             <Prints />
             <WhistleSystem />
             <WhistleCues />
+            <Motes />
+            <AudioSystem />
           </>
         )}
+        <Framing />
         <PerfProbe />
         {isDev && <DevCamProbe />}
       </Canvas>
-      {phase === 'playing' && !BARE && (
+      {phase !== 'loading' && !BARE && (
         <>
           <Joystick />
           <WhistleButton />
-          <Legend />
+          {introDone && <Legend />}
         </>
       )}
-      {phase === 'ended' && <EndCard title={chapterTitle} />}
+      {!BARE && <ChapterCard />}
       {!BARE && <PerfHudOverlay />}
     </>
   )
+}
+
+// The vertical field of view follows the viewport's shape. A 55-degree
+// vertical field is right on a landscape screen; on a portrait phone it leaves
+// a horizontal field of about thirty degrees, and the canyon became a slot with
+// its walls filling the frame and no sky. Portrait opens up to 68, which keeps
+// the horizontal field near forty and the walls where they belong.
+function Framing() {
+  const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera
+  const size = useThree((s) => s.size)
+  useEffect(() => {
+    const aspect = size.width / Math.max(1, size.height)
+    const fov = aspect < 1 ? THREE.MathUtils.lerp(68, 55, THREE.MathUtils.smoothstep(aspect, 0.6, 1)) : 55
+    if (Math.abs(camera.fov - fov) > 0.01) {
+      camera.fov = fov
+      camera.updateProjectionMatrix()
+    }
+  }, [camera, size])
+  return null
 }
 
 // Dev-only: exposes the live camera to the headless drive harness.
@@ -137,31 +163,4 @@ function DevCamProbe() {
     ;(window as unknown as Record<string, unknown>).__cam = camera
   }, [camera])
   return null
-}
-
-// Grey-box chapter end card: the place name only, per the text rules.
-function EndCard({ title }: { title: string }) {
-  const [visible, setVisible] = useState(false)
-  useEffect(() => {
-    const id = requestAnimationFrame(() => setVisible(true))
-    return () => cancelAnimationFrame(id)
-  }, [])
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        display: 'grid',
-        placeItems: 'center',
-        background: '#CFE3E0',
-        opacity: visible ? 1 : 0,
-        transition: 'opacity 2.5s ease',
-        fontFamily: 'system-ui, sans-serif',
-        color: '#4E6E58',
-        zIndex: 10,
-      }}
-    >
-      <h1 style={{ fontWeight: 600, letterSpacing: '0.04em' }}>{title}</h1>
-    </div>
-  )
 }

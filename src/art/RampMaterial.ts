@@ -35,6 +35,12 @@ vec3 skyColor(vec3 dir) {
   // and it reads as a band across mid-sky rather than as morning light
   float warm = 1.0 - smoothstep(-0.04, 0.2, h);
   vec3 col = mix(uSkyZenith, uSkyRim, warm * warm * warm);
+  // and the sun itself: the warm value gathers toward where the light comes
+  // from, low in the sky, so the sky has a direction and so does the haze that
+  // is built from it. No new colour enters -- it is the documented rim value.
+  float toSun = max(dot(dir, uSunDir), 0.0);
+  float glow = pow(toSun, 9.0) * 0.55 + pow(toSun, 40.0) * 0.35;
+  col = mix(col, uSkyRim, glow * (1.0 - smoothstep(0.45, 0.9, h)));
   // a touch cooler and darker below the horizon line so the canyon floor haze
   // does not glow brighter than the ground it sits behind
   col = mix(col, uSkyZenith * 0.92, smoothstep(0.0, -0.22, h));
@@ -183,6 +189,8 @@ uniform float uRampLo;
 uniform float uRampHi;
 uniform float uModel;
 uniform float uSkyDrop;
+uniform float uTime;
+uniform float uShimmer;
 
 ${SKY_GLSL}
 
@@ -293,7 +301,7 @@ void main() {
   // all the way: the canyon floor in shadow is still limestone dust lit by a
   // whole sky, and crushing it to the shade colour is how a morning turns into
   // an overcast afternoon.
-  t = mix(t, t * 0.08, occ);
+  t = mix(t, t * 0.16, occ);
 
   vec3 col = mix(shade, base, t);
 
@@ -338,7 +346,7 @@ void main() {
     // explain it. That is not contact darkening, it is a wash, and it is what
     // lifted the canyon floor up to meet the dog's coat. Contact darkening
     // belongs where the ground actually closes in.
-    col *= mix(0.6, 1.0, smoothstep(0.04, 0.34, vAo));
+    col *= mix(0.7, 1.0, smoothstep(0.04, 0.3, vAo));
   #endif
 
   // --- fog is the sky ------------------------------------------------------
@@ -362,6 +370,15 @@ void main() {
   float hazedLum = dot(hazed, vec3(0.2126, 0.7152, 0.0722));
   col = mix(hazed, col + (hazedLum - lum), 0.34);
 
+  // Water moves. A broad, slow band of light drifting across the surface --
+  // metres wide, seconds long -- nothing that could be mistaken for a texture
+  // or a reflection. Zero on everything that is not water.
+  if (uShimmer > 0.0) {
+    float w = sin(vWorldPos.x * 0.85 + vWorldPos.z * 0.35 + uTime * 0.9) *
+              sin(vWorldPos.z * 0.7 - vWorldPos.x * 0.25 - uTime * 0.55);
+    col *= 1.0 + uShimmer * w;
+  }
+
   // a material allowed to disobey the light (the collar, and nothing else)
   col = mix(col, base, uFlatten);
 
@@ -383,6 +400,7 @@ void main() {
 const SKY_FRAG = /* glsl */ `
 uniform vec3 uSkyZenith;
 uniform vec3 uSkyRim;
+uniform vec3 uSunDir;
 varying vec3 vDir;
 
 ${SKY_GLSL}
@@ -448,6 +466,8 @@ export interface RampOptions {
   hazeFloor?: number
   /** How many meters the haze fades out over, above hazeFloor. */
   hazeDepth?: number
+  /** Amplitude of the moving light band. Water only. */
+  shimmer?: number
 }
 
 function sunVector(): THREE.Vector3 {
@@ -502,6 +522,8 @@ export function makeRamp(opts: RampOptions = {}): THREE.ShaderMaterial {
       uMinScreenAxis: {
         value: new THREE.Vector3(...(opts.minScreenAxis ?? [0, 1, 0])).normalize(),
       },
+      uTime: { value: 0 },
+      uShimmer: { value: opts.shimmer ?? 0 },
       uMinScreenPx: { value: opts.minScreenRadiusPx ?? 0 },
       uMinScreenWidthPx: { value: opts.minScreenWidthPx ?? 0.7 },
       // Replaced every frame from the live camera; this is a 55-degree vertical
@@ -516,7 +538,7 @@ export function makeRamp(opts: RampOptions = {}): THREE.ShaderMaterial {
 }
 
 export function makeSkyMaterial(): THREE.ShaderMaterial {
-  return new THREE.ShaderMaterial({
+  const m = new THREE.ShaderMaterial({
     vertexShader: SKY_VERT,
     fragmentShader: SKY_FRAG,
     side: THREE.BackSide,
@@ -526,8 +548,20 @@ export function makeSkyMaterial(): THREE.ShaderMaterial {
     uniforms: {
       uSkyZenith: { value: lin(CH1.skyZenith.hex) },
       uSkyRim: { value: lin(CH1.skyRim.hex) },
+      uSunDir: { value: sunVector() },
     },
   })
+  m.name = 'sky'
+  // in the registry so a sun edit reaches the sky's glow too
+  registry.push(m)
+  return m
+}
+
+/** Advance the clock every material with motion in it reads. */
+export function tickMaterials(seconds: number) {
+  for (const m of registry) {
+    if (m.uniforms.uTime) m.uniforms.uTime.value = seconds
+  }
 }
 
 /** Live-tune the key light without rebuilding materials (art-bible only). */

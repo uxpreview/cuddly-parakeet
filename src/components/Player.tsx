@@ -34,7 +34,12 @@ import { Gait, solveChain, setWorldQuaternion, type Chain } from '../game/gait'
  */
 const ARM_LATERAL = 0.34
 
-const WALK_SPEED = 1.15
+// 1.5 now. At 1.15 the boy covered a screen-width of ground in about eight
+// seconds from a camera six and a half metres back, and the first thing every
+// playtester says about a walking game is that walking is slow. 1.5 keeps him
+// a walking child -- the gait's stride and cadence are retuned with it in
+// src/art/rig.ts -- and puts the chapter's critical path near seven minutes.
+const WALK_SPEED = 1.5
 const ACCEL = 8 // m/s^2 toward intent
 // 4.5 m/s^2, which takes him 0.26 s and 15 cm to stop from a walk. It was 12,
 // which is 0.10 s and 3 cm — a body that stops in a tenth of a second did not

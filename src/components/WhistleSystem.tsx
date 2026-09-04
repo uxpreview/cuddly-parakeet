@@ -339,7 +339,7 @@ export function WhistleCues() {
       }
       group.visible = true
       mats.bird[si].opacity = e < 0.62 ? 0.95 : 0.95 * (1 - (e - 0.62) / 0.38)
-      mats.puff[si].uniforms.uOpacity.value = 0.62 * Math.max(0, 1 - e / 0.55)
+      mats.puff[si].uniforms.uOpacity.value = 0.42 * Math.max(0, 1 - e / 0.55)
 
       for (let bi = 0; bi < BIRDS_PER_CUE; bi++) {
         const mesh = birdMeshes.current[si * BIRDS_PER_CUE + bi]

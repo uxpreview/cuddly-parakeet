@@ -10,7 +10,7 @@ import { makeRamp, sunDirection } from './RampMaterial'
  * a two-tone mosaic. This is the width at which a face reads as a plane turned
  * toward the light rather than as a tile.
  */
-const WORLD_RAMP: [number, number] = [-0.17, 0.06]
+const WORLD_RAMP: [number, number] = [-0.6, 0.32]
 
 /**
  * How much value a LIT face loses as it rakes away from the key light.
@@ -20,7 +20,7 @@ const WORLD_RAMP: [number, number] = [-0.17, 0.06]
  * whole wall into a flat sheet. This is the term that puts the facets back; see
  * RampMaterial for the measurement.
  */
-const WORLD_MODEL = 0.19
+const WORLD_MODEL = 0.14
 
 /**
  * Foliage gets a wider band than rock.
@@ -111,20 +111,20 @@ const SURFACE: Record<
   // shadow that also steps, the near bank came out as a patchwork quilt. The
   // facet normals and the shadow steps supply most of the variation now; the
   // mottle only has to stop two adjacent faces being bit-identical.
-  path: { hex: CH1.path.hex, shadow: SHADOW_MIX.ground, grain: 0.055 },
-  gravel: { hex: CH1.path.hex, shadow: SHADOW_MIX.ground, grain: 0.06 },
-  dust: { hex: CH1.path.hex, shadow: SHADOW_MIX.ground, grain: 0.052 },
+  path: { hex: CH1.path.hex, shadow: SHADOW_MIX.ground, grain: 0.035 },
+  gravel: { hex: CH1.path.hex, shadow: SHADOW_MIX.ground, grain: 0.04 },
+  dust: { hex: CH1.path.hex, shadow: SHADOW_MIX.ground, grain: 0.035 },
   // Scree and sand are not their own colours. art-direction.md gives Chapter 1
   // five ground-and-stone hexes and no more; a talus slope is broken limestone
   // and a sand bar is the same pale gravel the path is. Inventing a value for
   // each of them is how a documented palette quietly becomes a suggestion — and
   // between them they were occupying more of the frame than the two hexes the
   // document actually names.
-  sand: { hex: CH1.path.hex, shadow: SHADOW_MIX.ground, grain: 0.052 },
+  sand: { hex: CH1.path.hex, shadow: SHADOW_MIX.ground, grain: 0.035 },
   wetstone: { hex: CH1.limestone.hex, shadow: SHADOW_MIX.limestone, grain: 0.04, tint: 0.78 },
-  scree: { hex: CH1.limestone.hex, shadow: SHADOW_MIX.limestone, grain: 0.04 , bed: 0.045 },
-  limestone: { hex: CH1.limestone.hex, shadow: SHADOW_MIX.limestone, grain: 0.032 , bed: 0.04 },
-  rock: { hex: CH1.limestone.hex, shadow: SHADOW_MIX.limestone, grain: 0.03 , bed: 0.032 },
+  scree: { hex: CH1.limestone.hex, shadow: SHADOW_MIX.limestone, grain: 0.035 , bed: 0.03 },
+  limestone: { hex: CH1.limestone.hex, shadow: SHADOW_MIX.limestone, grain: 0.03 , bed: 0.028 },
+  rock: { hex: CH1.limestone.hex, shadow: SHADOW_MIX.limestone, grain: 0.03 , bed: 0.024 },
   scrub: { hex: CH1.scrub.hex, shadow: SHADOW_MIX.foliage, grain: 0.042 },
   // A pine trunk that shares the wall's value and hue disappears into it and
   // the canopy floats. Deadwood is darker than limestone by design.
@@ -285,8 +285,8 @@ function mottle(p: THREE.Vector3, amount: number, bed = 0): number {
   // whose screen size barely changed with distance, which is what tripped the
   // "visible image textures" item on the Gate 2 failure list. Real 3-D value
   // noise has no preferred direction and no lattice.
-  const a = vnoise3(p.x * 1.9, p.y * 1.9, p.z * 1.9, 3) * 0.6
-  const b = vnoise3(p.x * 0.42, p.y * 0.42, p.z * 0.42, 11) * 0.4
+  const a = vnoise3(p.x * 0.32, p.y * 0.32, p.z * 0.32, 3) * 0.5
+  const b = vnoise3(p.x * 0.09, p.y * 0.09, p.z * 0.09, 11) * 0.5
   // Stone also gets BEDDING: a slow band keyed on height alone, so the wall's
   // variation reads as strata rather than as a pattern applied to it. The band
   // boundary wanders along the run, so no ledge is a level ribbon.
@@ -439,8 +439,29 @@ class SunOcclusion {
   }
 
   private height(x: number, z: number): number {
-    const i = this.index(x, z)
-    return i < 0 ? -1e9 : this.h[i]
+    // Bilinear across the four nearest cells. The field is 2 m cells and the
+    // faces it shades are 1.2 m, so nearest-cell lookups stepped every shadow
+    // edge at the cell size: the canyon floor read as a quilt of rectangles.
+    // Interpolating the heights makes an edge a ramp across a couple of faces.
+    const fx = (x - this.minX) / this.cell - 0.5
+    const fz = (z - this.minZ) / this.cell - 0.5
+    const cx = Math.floor(fx)
+    const cz = Math.floor(fz)
+    const tx = fx - cx
+    const tz = fz - cz
+    const at = (ix: number, iz: number) => {
+      if (ix < 0 || iz < 0 || ix >= this.nx || iz >= this.nz) return -1e9
+      return this.h[iz * this.nx + ix]
+    }
+    const h00 = at(cx, cz)
+    const h10 = at(cx + 1, cz)
+    const h01 = at(cx, cz + 1)
+    const h11 = at(cx + 1, cz + 1)
+    // a hole stays a hole: lerping toward -1e9 would punch holes in the walls
+    const ok = (v: number) => v > -1e8
+    if (!ok(h00) && !ok(h10) && !ok(h01) && !ok(h11)) return -1e9
+    const f = (a: number, b: number, t: number) => (ok(a) && ok(b) ? a + (b - a) * t : ok(a) ? a : b)
+    return f(f(h00, h10, tx), f(h01, h11, tx), tz)
   }
 
   /** Public ground height, for rejecting scatter that would hang in mid-air. */
@@ -564,7 +585,7 @@ class SunOcclusion {
     z += nz * this.cell * 1.05
     // three rays fanned +/- 5 degrees: a soft edge instead of a hard cut
     let hit = 0
-    for (const a of [-0.087, 0, 0.087]) {
+    for (const a of [-0.12, 0, 0.12]) {
       const ca = Math.cos(a)
       const sa = Math.sin(a)
       if (this.blocked(x, y, z, dx * ca - dz * sa, dx * sa + dz * ca, dy)) hit++
@@ -748,7 +769,7 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
     // whose relief changes every metre and a half along its run has none. The
     // wander keeps a ledge from being a ruled line for a hundred metres.
     const wander = vnoise(i / 24, k * 13 + 3) * 0.4
-    const n = Math.round(vnoise(k * 3.7 + u * 7.5 + wander, k * 17 + 5) * 2.5) / 2.5
+    const n = Math.round(vnoise(k * 3.7 + u * 4.5 + wander, k * 17 + 5) * 1.5) / 1.5
     // Five times what it was, ON STEEP RUNGS ONLY.
     //
     // It was capped at 10 cm because under a nearly-closed terminator every
@@ -775,7 +796,7 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
     // exactly backwards for the frame the game is played in, where the near
     // bank is a quarter of the picture and the far cliff is small. Relief is a
     // property of limestone, not of how the loft happened to be rung.
-    const amp = Math.min(0.26, spanLen * 0.28) * sm * sm * (3 - 2 * sm)
+    const amp = Math.min(0.14, spanLen * 0.2) * sm * sm * (3 - 2 * sm)
     const horiz = Math.hypot(_un.x, _un.z) || 1
     out.x += (_un.x / horiz) * px * n * amp
     out.z += (_un.z / horiz) * px * n * amp
@@ -837,6 +858,32 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
     }
   }
 
+  // Two passes. The first builds every face and bakes its shadow; the second
+  // blurs that shadow across neighbouring faces in LOFT space and emits.
+  //
+  // The bake is a 2 m heightfield and a face is about 1.2 m, so one value per
+  // face turned every shadow edge into a staircase of rectangles the size of
+  // the bake cell -- the canyon floor read as a quilt. A shadow that has been
+  // averaged with the faces around it crosses three or four of them as a ramp,
+  // which is what a soft morning shadow looks like when every polygon is one
+  // flat colour. The polygons stay flat; only the value they carry is smooth.
+  interface Face {
+    leg: (typeof art.legs)[number]
+    i: number
+    k: number
+    sIdx: number
+    u0: number
+    u1: number
+    A: THREE.Vector3
+    B: THREE.Vector3
+    Cc: THREE.Vector3
+    D: THREE.Vector3
+    occ: number
+    ao: number
+  }
+  const faces: Face[] = []
+  const faceAt = new Map<string, Face>()
+  const fkey = (i: number, k: number, sIdx: number) => i + '|' + k + '|' + sIdx
   for (const leg of art.legs) {
     const a = leg.range[0]
     const b = leg.range[1]
@@ -850,10 +897,47 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
           const B = subPoint(i + 1, k, u0, _sb).clone()
           const Cc = subPoint(i + 1, k, u1, _sc).clone()
           const D = subPoint(i, k, u1, _sd).clone()
-          emit(leg, i, k, u0, u1, A, B, Cc, D)
+          const f: Face = { leg, i, k, sIdx, u0, u1, A, B, Cc, D, occ: faceOcc(A, B, Cc, D)[0], ao: faceAo(A, B, Cc, D)[0] }
+          faces.push(f)
+          faceAt.set(fkey(i, k, sIdx), f)
         }
       }
     }
+  }
+  // The sky-visibility term is cached on a 1.5 m grid and was the worse of
+  // the two: on the switchback terraces it drew a quilt of grey rectangles
+  // across a floor in full sun. Same blur, one face wider.
+  const R = 2
+  for (const f of faces) {
+    let occSum = f.occ * 2
+    let aoSum = f.ao * 2
+    let n = 2
+    for (let di = -R; di <= R; di++) {
+      for (let ds = -R; ds <= R; ds++) {
+        if (!di && !ds) continue
+        let k = f.k
+        let sIdx = f.sIdx + ds
+        // step across a rung boundary into the neighbouring rung's faces
+        while (sIdx < 0) {
+          k--
+          if (k < 0) break
+          sIdx += subForRung[k]
+        }
+        while (k >= 0 && sIdx >= subForRung[k]) {
+          sIdx -= subForRung[k]
+          k++
+          if (k >= subForRung.length) break
+        }
+        if (k < 0 || k >= subForRung.length) continue
+        const nb = faceAt.get(fkey(f.i + di, k, sIdx))
+        if (!nb) continue
+        const w = 1 / (1 + Math.abs(di) + Math.abs(ds))
+        occSum += nb.occ * w
+        aoSum += nb.ao * w
+        n += w
+      }
+    }
+    emit(f.leg, f.i, f.k, f.u0, f.u1, f.A, f.B, f.Cc, f.D, occSum / n, aoSum / n)
   }
 
   function faceOcc(
@@ -882,10 +966,14 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
     const nz = _n0.z
     let sum = shadow.sample(p.x, p.y, p.z, nx, nz)
     for (const q of [a, b, c, d]) {
-      _oc.copy(q).lerp(p, 0.35)
+      _oc.copy(q).lerp(p, 0.3)
+      sum += shadow.sample(_oc.x, _oc.y, _oc.z, nx, nz)
+      // and past the corner: a shadow edge is then a ramp across three faces,
+      // not a step across one
+      _oc.copy(q).lerp(p, -0.5)
       sum += shadow.sample(_oc.x, _oc.y, _oc.z, nx, nz)
     }
-    const v = sum / 5
+    const v = sum / 9
     return [v, v, v, v]
   }
 
@@ -913,6 +1001,8 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
     B: THREE.Vector3,
     Cc: THREE.Vector3,
     D: THREE.Vector3,
+    occ: number,
+    ao: number,
   ) {
     {
       {
@@ -981,7 +1071,15 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
         const g1 = s1.grain ?? 0
         const k0 = s0.tint ?? 1
         const k1 = s1.tint ?? 1
-        const bed = s0.bed ?? 0
+        // Bedding is a CLIFF's texture, keyed on height. On a floor that
+        // slopes it draws contour bands, several metres wide on a gentle
+        // grade, and the switchback terraces came out as a quilt of them. So
+        // it only reaches faces that stand up.
+        _n0.copy(B).sub(A)
+        _n1.copy(D).sub(A)
+        _n0.cross(_n1).normalize()
+        const steepF = THREE.MathUtils.smoothstep(1 - Math.abs(_n0.y), 0.35, 0.7)
+        const bed = (s0.bed ?? 0) * steepF
         // One tone for the whole face. See `mottle`: sampling it at the corners
         // interpolates it, and an interpolated tone is a gradient painted over
         // the facet the flat shading exists to show.
@@ -1008,10 +1106,9 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
           // every channel flat, a polygon is one colour — which is what "flat
           // shading exposes bad forms" actually means, and the price is that a
           // shadow edge steps at the size of the mesh. That is the idiom.
-          faceOcc(A, B, Cc, D),
-          // Sky visibility, also flat per face. It is eight rays a sample, so
-          // it is cached on a metre-and-a-half world grid.
-          faceAo(A, B, Cc, D),
+          [occ, occ, occ, occ],
+          // Sky visibility, also flat per face and blurred with the shadow.
+          [ao, ao, ao, ao],
         )
       }
     }
@@ -1196,6 +1293,7 @@ export function buildArtTerrain(art: ArtTerrain): ArtScene {
       opacity,
       depthWrite: opacity >= 1,
       side: THREE.DoubleSide,
+      shimmer: 0.045,
     })
     mat.name = 'water:' + id
     materials.push(mat)

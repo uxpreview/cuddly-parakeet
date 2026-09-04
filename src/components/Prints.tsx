@@ -70,6 +70,17 @@ function makeBank(kind: 'dog' | 'boy'): Bank {
   }
 }
 
+const APART2 = 0.15 * 0.15
+function overlaps(b: Bank, x: number, z: number, t: number, life: number): boolean {
+  for (let i = 0; i < b.birth.length; i++) {
+    if (t - b.birth[i] > life) continue
+    const dx = b.x[i] - x
+    const dz = b.z[i] - z
+    if (dx * dx + dz * dz < APART2) return true
+  }
+  return false
+}
+
 function setSlot(b: Bank, i: number, scale: number) {
   _q.setFromAxisAngle(UP, b.h[i])
   _p.set(b.x[i], b.y[i], b.z[i])
@@ -114,6 +125,11 @@ export function Prints() {
       const gs = world.blocks?.sampleGround(p.x, p.z, p.y + 0.75)
       if (!gs || !surfaces.includes(gs.surface)) continue
       const b = banks[p.kind]
+      // Never darker than one print. The decals multiply, so two on the same
+      // spot are twice as dark and a dozen are a hole in the ground -- which is
+      // what a dog turning about at heel for half a minute was drawing. A
+      // print that lands on a live print is simply not laid.
+      if (overlaps(b, p.x, p.z, t, LIFE[p.kind])) continue
       const i = b.next
       b.next = (b.next + 1) % b.birth.length
       b.x[i] = p.x

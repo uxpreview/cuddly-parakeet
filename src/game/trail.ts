@@ -23,6 +23,12 @@ export interface PrintSpawn {
 
 const queue: PrintSpawn[] = []
 
+/** Something that wants to hear a footfall as it happens (the audio). */
+let listener: ((p: PrintSpawn) => void) | null = null
+export function setPrintListener(fn: ((p: PrintSpawn) => void) | null): void {
+  listener = fn
+}
+
 /**
  * A second copy of every spawn, for the recording harness only. The gait
  * measurements in tools/dev/gait.mjs are checked against the prints the game
@@ -44,6 +50,7 @@ export function pushPrint(
   queue.push(p)
   if (log.length > 32) log.shift()
   log.push(p)
+  if (listener) listener(p)
 }
 
 /** Drains the harness log. Called only from the record probe. */
